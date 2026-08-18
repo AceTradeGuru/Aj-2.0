@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ g.title }}{% endblock %}
+{% block crumb %}<a href="{{ url_for('goals') }}">Goals</a> · {{ g.title }}{% endblock %}
+{% block content %}
+{% set h = g.health %}
+
+<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:.9rem">
+  <div style="min-width:0">
+    <h1>{{ g.title }}</h1>
+    <div class="tiny muted">
+      <span class="badge neutral">{{ domains.get(g.domain, g.domain) }}</span>
+      {{ g.metric_name }} · deadline {{ g.deadline|nicedate }} · started {{ g.start_date|nicedate }}
+    </div>
+  </div>
+  <span class="badge {{ h.status }}" style="font-size:.8rem;padding:.3rem .7rem">{{ h.label }}</span>
+</div>
+
+{% if g.why or g.stakes %}
+  <div class="card" style="background:#fffdf8;border-color:#e6d3ae">
+    {% if g.why %}<div class="eyebrow" style="color:var(--brand-dk)">Why</div>
+      <p style="margin-bottom:.6rem">{{ g.why }}</p>{% endif %}
+    {% if g.stakes %}<div class="eyebrow" style="color:var(--brand-dk)">What missing it costs</div>
+      <p>{{ g.stakes }}</p>{% endif %}
+  </div>
+{% endif %}
+
+<div class="grid g4" style="margin-bottom:1rem">
+  <div class="kpi"><div class="lbl">Now</div>
+    <div class="num sm">{{ (g, g.current_value)|value }}</div>
+    <div class="note">from {{ (g, g.start_value)|value }}</div></div>
+  <div class="kpi"><div class="lbl">Target</div>
+    <div class="num sm">{{ (g, g.target_value)|value }}</div>
+    <div class="note">{{ (g, h.remaining)|delta }} to go</div></div>
+  <div class="kpi"><div class="lbl">Days left</div>
+    <div class="num sm {{ 'at_risk' if h.days_left < 14 else '' }}">{{ h.days_left }}</div>
+    <div class="note">of {{ h.total_days }} total</div></div>
+  <div class="kpi"><div class="lbl">Required pace</div>
+    <div class="num sm {{ h.status }}">{{ (g, h.per_week)|delta if h.per_week is not none else '—' }}</div>
+    <div class="note">per week from here</div></div>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h3>Pace</h3>
+    <span class="tiny muted">{{ h.progress_pct }}% covered · {{ h.expected_pct }}% of the calendar spent</span>
+  </div>
+  <div class="track paced thick" style="height:12px">
+    <i class="{{ h.status }}" style="width:{{ [[h.progress_pct, 0]|max, 100]|min }}%"></i>
+    <span class="pin" style="left:{{ [h.expected_pct, 100]|min }}%; height:20px; top:-4px"></span>
+  </div>
+  <div class="pinnote">The pin is where the calendar says you should be.
+    {% if h.gap_pct < 0 %}You&rsquo;re {{ -h.gap_pct }} points behind it.
+    {% else %}You&rsquo;re {{ h.gap_pct }} points ahead of it.{% endif %}
+    {% if h.is_stale %}<b style="color:var(--at_risk)"> Last measured {{ h.stale_days }} days ago.</b>{% endif %}
+  </div>
+
+  {% if spark|length > 1 %}
+    <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" style="margin-top:1rem">
+      <polyline points="{{ spark_points }}" fill="none" stroke="var(--brand)" stroke-width="1.2"
+                vector-effect="non-scaling-stroke"/>
+    </svg>
+    <div class="tiny muted">{{ spark|length }} readings, oldest to newest.</div>
+  {% endif %}
+</div>
+
+<div class="grid split">
+  <div>
+    <div class="card pad0">
+      <div class="cardhead"><h3>Milestones</h3><span class="spacer"></span>
+        <form method="post" action="{{ url_for('goal_plan', goal_id=g.id) }}" class="inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-dark btn-sm">Have AJ build the plan</button>
+        </form>
+      </div>
+      <div class="cardbody">
+        {% for m in g.milestones %}
+          <div class="rowitem {{ 'done' if m.done_at }}">
+            <form method="post" action="{{ url_for('milestone_toggle', ms_id=m.id) }}" class="inline">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button class="btn btn-sm {{ 'btn-green' if m.done_at else 'btn-ghost' }}"
+                      title="Toggle">{{ '✓' if m.done_at else '○' }}</button>
+            </form>
+            <div class="main">
+              <div class="t">{{ m.title }}</div>
+              <div class="m">
+                {% if m.done_at %}done {{ m.done_at|nicedate }}
+                {% else %}
+                  <span class="badge {{ 'at_risk' if m.target_date < today.isoformat() else 'neutral' }}">{{ m.target_date|when }}</span>
+                  <span class="muted">· {{ m.target_date|nicedate }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty">No milestones. A goal without checkpoints is a wish with a deadline.</div>
+        {% endfor %}
+
+        <form method="post" action="{{ url_for('milestone_add') }}"
+              style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line2)">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="goal_id" value="{{ g.id }}">
+          <div class="row" style="flex-wrap:nowrap">
+            <input name="title" placeholder="Milestone — an outcome, not an activity" required style="flex:1">
+            <input type="date" name="target_date" required style="width:150px">
+            <button class="btn btn-ghost">Add</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>Commitments on this goal</h3></div>
+      <div class="cardbody">
+        {% for x in commitments %}
+          <div class="rowitem {{ 'done' if x.status == 'kept' }}">
+            <div class="main">
+              <div class="t">{{ x.text }}</div>
+              <div class="m">
+                <span class="badge {{ {'kept':'strong','missed':'at_risk','dropped':'neutral','open':'watch'}[x.status] }}">{{ x.status }}</span>
+                <span class="muted">· due {{ x.due_date|nicedate }} · by {{ 'AJ' if x.source == 'aj' else 'you' }}</span>
+                {% if x.excuse %}<div class="tiny muted">&ldquo;{{ x.excuse }}&rdquo;</div>{% endif %}
+              </div>
+            </div>
+            {% if x.status == 'open' %}
+              <div class="acts">
+                <form method="post" action="{{ url_for('commitment_resolve', cid=x.id) }}" class="inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <input type="hidden" name="back" value="{{ url_for('goal_detail', goal_id=g.id) }}">
+                  <input type="hidden" name="status" value="kept">
+                  <button class="btn btn-green btn-sm">Kept</button>
+                </form>
+                <form method="post" action="{{ url_for('commitment_resolve', cid=x.id) }}" class="inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <input type="hidden" name="back" value="{{ url_for('goal_detail', goal_id=g.id) }}">
+                  <input type="hidden" name="status" value="missed">
+                  <button class="btn btn-red btn-sm">Missed</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="empty">Nothing committed against this goal yet.</div>
+        {% endfor %}
+
+        <form method="post" action="{{ url_for('commitment_add') }}"
+              style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line2)">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="goal_id" value="{{ g.id }}">
+          <input type="hidden" name="back" value="{{ url_for('goal_detail', goal_id=g.id) }}">
+          <div class="row" style="flex-wrap:nowrap">
+            <input name="text" placeholder="Commit to something this week" required style="flex:1">
+            <input type="date" name="due_date" required style="width:150px">
+            <button class="btn btn-dark">Commit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Log a reading</h3>
+      <p class="tiny muted">The only thing that counts as progress here.</p>
+      <form method="post" action="{{ url_for('goal_metric', goal_id=g.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <label>{{ g.metric_name }} is now</label>
+        <input name="value" value="{{ g.current_value }}" required>
+        <label>Note <span class="hint">— optional</span></label>
+        <input name="note" placeholder="What moved it?">
+        <button class="btn btn-primary" style="margin-top:.8rem">Log it</button>
+      </form>
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>History</h3></div>
+      <div class="cardbody" style="max-height:320px;overflow-y:auto">
+        {% for r in readings %}
+          <div class="rowitem">
+            <div class="main">
+              <div class="t">{{ (g, r.value)|value }}</div>
+              <div class="m">{{ r.day|nicedate }}{% if r.note %} · {{ r.note }}{% endif %}</div>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty">No readings yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Close it out</h3>
+      <p class="tiny muted">A goal you&rsquo;re not working is costing you attention.
+        Win it, bury it, or admit it&rsquo;s paused.</p>
+      <div class="row" style="margin-top:.6rem">
+        {% for status, label, cls in [('won','Won it','btn-green'), ('paused','Pause','btn-ghost'),
+                                      ('dropped','Drop it','btn-red'), ('active','Reactivate','btn-ghost')] %}
+          {% if g.status != status %}
+            <form method="post" action="{{ url_for('goal_status', goal_id=g.id) }}" class="inline">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="status" value="{{ status }}">
+              <button class="btn {{ cls }} btn-sm">{{ label }}</button>
+            </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

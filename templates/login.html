@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AJ 2.0</title>
+<style>
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:#0b0f19; color:#e7ebf3; display:flex; align-items:center;
+         justify-content:center; min-height:100vh; margin:0; }
+  .box { width:min(360px, 90vw); }
+  h1 { font-size:2rem; letter-spacing:-1px; margin:0 0 .2rem; }
+  h1 span { color:#e08b00; }
+  p { color:#8b95ab; font-size:.85rem; margin:0 0 1.4rem; }
+  input { width:100%; padding:.7rem .8rem; border-radius:10px; border:1px solid #222b41;
+          background:#151b2b; color:#fff; font-size:1rem; }
+  button { width:100%; margin-top:.7rem; padding:.7rem; border:none; border-radius:10px;
+           background:#e08b00; color:#231800; font-weight:800; font-size:.95rem; cursor:pointer; }
+  .flash { background:#2a1414; border:1px solid #7f1d1d; color:#fca5a5; padding:.55rem .8rem;
+           border-radius:9px; margin-bottom:.9rem; font-size:.85rem; }
+</style>
+</head>
+<body>
+  <form class="box" method="post">
+    <h1>AJ<span> 2.0</span></h1>
+    <p>Your goals, your misses, your excuses. Passcode.</p>
+    {% with messages = get_flashed_messages() %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="password" name="passcode" autofocus required>
+    <button>Unlock</button>
+  </form>
+</body>
+</html>

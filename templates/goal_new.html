@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}New goal{% endblock %}
+{% block crumb %}Goals · new{% endblock %}
+{% block content %}
+<h1>Put it in front of the board</h1>
+<div class="sub">Write it however it lives in your head. AJ will pressure-test it before
+  it goes on the board — the point is to find the holes now, not in ninety days.</div>
+
+<div class="grid split">
+<form method="post">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <div class="card">
+    <label>The goal <span class="hint">— name it like it&rsquo;s already true</span></label>
+    <input name="title" value="{{ draft.title }}" placeholder="CarrierGuard to $8k MRR" required>
+
+    <label>Why it matters <span class="hint">— the Tuesday-you-don&rsquo;t-feel-like-it reason</span></label>
+    <textarea name="why" placeholder="What changes in your life when this is done?">{{ draft.why }}</textarea>
+
+    <div class="fieldrow">
+      <div>
+        <label>Domain</label>
+        <select name="domain">
+          {% for key, label in domains.items() %}
+            <option value="{{ key }}" {{ 'selected' if draft.domain == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>The metric</label>
+        <input name="metric_name" value="{{ draft.metric_name }}" placeholder="MRR">
+      </div>
+    </div>
+
+    <div class="fieldrow">
+      <div><label>Unit <span class="hint">— $, %, or blank</span></label>
+        <input name="unit" value="{{ draft.unit }}" placeholder="$" maxlength="12"></div>
+      <div><label>Deadline</label>
+        <input type="date" name="deadline" value="{{ draft.deadline }}"></div>
+    </div>
+
+    <div class="fieldrow">
+      {# Echo exactly what was typed rather than the parsed float, so an untouched
+         form shows an empty box instead of a discouraging 0.0. #}
+      <div><label>Where it is today</label>
+        <input name="start_value" value="{{ request.form.get('start_value', '') }}" placeholder="0"></div>
+      <div><label>Where it has to be</label>
+        <input name="target_value" value="{{ request.form.get('target_value', '') }}" placeholder="8000"></div>
+    </div>
+
+    <label>What missing it costs you <span class="hint">— optional, and the one AJ quotes back</span></label>
+    <textarea name="stakes" style="min-height:60px">{{ draft.stakes }}</textarea>
+
+    <div class="row" style="margin-top:1rem">
+      <button class="btn btn-dark" name="action" value="test">Pressure-test it</button>
+      <button class="btn btn-primary" name="action" value="create">Put it on the board</button>
+    </div>
+  </div>
+</form>
+
+<div>
+  {% if test %}
+    {% set tone = {'fund':'strong','sharpen':'watch','reject':'at_risk'}[test.verdict] %}
+    <div class="card" style="border-left:4px solid var(--{{ tone }})">
+      <div class="row" style="justify-content:space-between">
+        <div class="eyebrow">AJ&rsquo;s verdict</div>
+        <span class="badge {{ 'brand' if test_engine == 'claude' else 'neutral' }}">{{ test_engine }}</span>
+      </div>
+      <div style="font-size:1.15rem;font-weight:800;letter-spacing:-.3px;margin:.3rem 0 .35rem"
+           class="num {{ tone }}">{{ test.verdict|upper }}</div>
+      <p>{{ test.verdict_line }}</p>
+
+      {% if test.holes %}
+        <h3 style="margin-top:1.1rem">The holes</h3>
+        {% for h in test.holes %}
+          <div class="sig high" style="margin-top:.5rem">
+            <div class="lbl">{{ h.hole }}</div>
+            <div class="det">{{ h.fix }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% if test.questions %}
+        <h3 style="margin-top:1.1rem">Answer these out loud</h3>
+        <ul style="margin-left:1.05rem">
+          {% for q in test.questions %}<li style="margin:.3rem 0">{{ q }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+
+      {# The offline coach can restate a goal but cannot invent a target it has no
+         way to judge. When it hasn't produced a real metric and a real number,
+         showing "take AJ's version" would just create an empty goal. #}
+      {% set sharpened_usable = test.sharpened.metric_name and
+                                test.sharpened.target_value != test.sharpened.start_value %}
+      <h3 style="margin-top:1.1rem">{{ "AJ&rsquo;s version"|safe if sharpened_usable else "What it has to become" }}</h3>
+      <div class="notice" style="border-style:solid;background:#fffdf8;border-color:#e6d3ae;color:var(--text)">
+        <b>{{ test.sharpened.title }}</b><br>
+        {{ test.sharpened.metric_name }}: {{ test.sharpened.start_value }} →
+        {{ test.sharpened.target_value }} {{ test.sharpened.unit }} by {{ test.sharpened.deadline }}<br>
+        <span class="muted">First move: {{ test.sharpened.first_move }}</span>
+      </div>
+      {% if sharpened_usable %}
+      <form method="post">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="title" value="{{ test.sharpened.title }}">
+        <input type="hidden" name="why" value="{{ draft.why }}">
+        <input type="hidden" name="domain" value="{{ draft.domain }}">
+        <input type="hidden" name="metric_name" value="{{ test.sharpened.metric_name }}">
+        <input type="hidden" name="unit" value="{{ test.sharpened.unit }}">
+        <input type="hidden" name="start_value" value="{{ test.sharpened.start_value }}">
+        <input type="hidden" name="target_value" value="{{ test.sharpened.target_value }}">
+        <input type="hidden" name="deadline" value="{{ test.sharpened.deadline }}">
+        <input type="hidden" name="stakes" value="{{ draft.stakes }}">
+        <button class="btn btn-primary" name="action" value="create">Take AJ&rsquo;s version</button>
+      </form>
+      {% else %}
+        <p class="tiny muted">Fill the holes in on the left and test it again.</p>
+      {% endif %}
+      {% if budget_note %}<div class="tiny muted" style="margin-top:.6rem">{{ budget_note }}</div>{% endif %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="eyebrow">What gets rejected</div>
+      <ul style="margin:.5rem 0 0 1.05rem;color:var(--muted)">
+        <li style="margin:.3rem 0">Goals with no number — &ldquo;grow the business&rdquo;.</li>
+        <li style="margin:.3rem 0">Deadlines nothing is forcing.</li>
+        <li style="margin:.3rem 0">Targets that ignore your track record.</li>
+        <li style="margin:.3rem 0">A fourth goal while three are already slipping.</li>
+      </ul>
+      <p class="tiny muted" style="margin-top:.8rem">You can always override the verdict.
+        It&rsquo;s your life. You just don&rsquo;t get to add one without reading what&rsquo;s wrong with it.</p>
+    </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

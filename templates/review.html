@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Weekly review{% endblock %}
+{% block crumb %}Weekly review{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem">
+  <div>
+    <h1>The board meeting</h1>
+    <div class="sub" style="margin-bottom:0">Week ending {{ review.day|nicedate }}. You&rsquo;re the
+      operator; AJ is the board. The meeting is about what moved.</div>
+  </div>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button class="btn btn-dark">Re-run the meeting</button>
+  </form>
+</div>
+
+<div class="grid split">
+  <div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
+        <div class="eyebrow">Minutes</div>
+        <span class="badge {{ 'brand' if review.engine == 'claude' else 'neutral' }}">{{ review.engine }}</span>
+      </div>
+      <div class="doc">{{ review.body|markdown }}</div>
+    </div>
+
+    {% if past %}
+      <h2>Previous meetings</h2>
+      {% for p in past %}
+        <details class="card">
+          <summary style="cursor:pointer;font-weight:700">Week ending {{ p.day|nicedate }}</summary>
+          <div class="doc" style="margin-top:.8rem">{{ p.body|markdown }}</div>
+        </details>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="eyebrow">Ledger, last 90 days</div>
+      {% set c = s.credibility %}
+      <div class="num {{ c.tone }}" style="font-size:2rem;font-weight:800;letter-spacing:-1px">
+        {{ c.score if c.score is not none else '—' }}</div>
+      <div class="tiny muted">{{ c.label }}</div>
+      <table style="margin-top:.8rem">
+        <tbody>
+          <tr><td>Kept</td><td class="num" style="font-weight:700;color:var(--strong)">{{ c.kept }}</td></tr>
+          <tr><td>Missed</td><td class="num" style="font-weight:700;color:var(--at_risk)">{{ c.missed }}</td></tr>
+          <tr><td>Dropped</td><td class="num" style="font-weight:700">{{ c.dropped }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>Recently resolved</h3></div>
+      <div class="cardbody">
+        {% for x in s.commitments.recent_resolved %}
+          <div class="rowitem">
+            <div class="main">
+              <div class="t" style="font-weight:600">{{ x.text }}</div>
+              <div class="m">
+                <span class="badge {{ {'kept':'strong','missed':'at_risk','dropped':'neutral'}[x.status] }}">{{ x.status }}</span>
+                <span class="muted">· {{ x.due_date|nicedate }}</span>
+                {% if x.excuse %}<div class="tiny muted">&ldquo;{{ x.excuse }}&rdquo;</div>{% endif %}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty">Nothing resolved yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+# Render blueprint for AJ 2.0.
+#
+# Deploy: push this repo to GitHub, then in Render choose New → Blueprint and
+# point it at the repo.
+#
+# Two values you must set by hand in the dashboard after the first deploy (both
+# are sync:false, so they are never read from the repo):
+#   SECRET_KEY         — python3 -c "import secrets; print(secrets.token_hex(32))"
+#   AJ_PASSCODE        — the app refuses to boot in production without it
+#   ANTHROPIC_API_KEY  — optional; without it the offline coach runs
+#
+# Note the disk. This app stores everything in one SQLite file, which is the right
+# call for a single user — and it means a deploy without a persistent disk wipes
+# your goals on every restart. The disk below is what makes that not happen.
+
+services:
+  - type: web
+    name: aj-2-0
+    runtime: python
+    plan: starter            # ~$7/mo; required for a persistent disk
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:$PORT --access-logfile - --error-logfile - app:app
+    healthCheckPath: /login
+    disk:
+      name: aj-data
+      mountPath: /var/data
+      sizeGB: 1              # a lifetime of text weighs almost nothing
+    envVars:
+      - key: AJ_DB
+        value: /var/data/aj.db
+      - key: AJ_ENV
+        value: production
+      - key: AJ_DEBUG
+        value: "0"
+      - key: SESSION_COOKIE_SECURE
+        value: "1"
+      - key: SESSION_DAYS
+        value: "30"
+      - key: AI_MONTHLY_CAP_USD
+        value: "25"
+      - key: AI_CALLS_PER_HOUR
+        value: "40"
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: SECRET_KEY
+        sync: false
+      - key: AJ_PASSCODE
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
