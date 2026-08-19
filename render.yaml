@@ -51,3 +51,11 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional mail triage. An app password, not your account password, from a
+      # mailbox you would be willing to lose. Omit all three to leave mail off.
+      - key: AJ_IMAP_HOST
+        sync: false
+      - key: AJ_IMAP_USER
+        sync: false
+      - key: AJ_IMAP_PASSWORD
+        sync: false

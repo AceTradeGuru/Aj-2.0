@@ -52,6 +52,19 @@ class Config:
 
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_UPLOAD_KB", "512")) * 1024
 
+    # Mailbox, for triage only. These live here and never in the database: a
+    # password in a SQLite file is a password in every backup of that file.
+    # Use an app password from a mailbox you'd be willing to lose, not your
+    # primary identity account — and revoke it from the same settings page.
+    IMAP_HOST = os.environ.get("AJ_IMAP_HOST", "")
+    IMAP_USER = os.environ.get("AJ_IMAP_USER", "")
+    IMAP_PASSWORD = os.environ.get("AJ_IMAP_PASSWORD", "")
+    IMAP_FOLDER = os.environ.get("AJ_IMAP_FOLDER", "INBOX")
+
+    @classmethod
+    def mail_configured(cls):
+        return bool(cls.IMAP_HOST and cls.IMAP_USER and cls.IMAP_PASSWORD)
+
     # Model spend guards. The per-hour cap blunts a runaway loop; the monthly cap
     # is the one that keeps this a $6 habit instead of a surprise.
     AI_CALLS_PER_HOUR = int(os.environ.get("AI_CALLS_PER_HOUR", "40"))

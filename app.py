@@ -822,7 +822,9 @@ def life():
     recent_tx = [dict(r) for r in conn.execute(
         "SELECT * FROM transactions ORDER BY day DESC, id DESC LIMIT 25")]
     return render_template("life.html", s=state, sources=sources, recent_tx=recent_tx,
-                           kinds=FEED_KINDS, bank_note=feeds.LIVE_BANK_NOTE)
+                           kinds=FEED_KINDS, bank_note=feeds.LIVE_BANK_NOTE,
+                           mail_ready=Config.mail_configured(),
+                           mail_user=Config.IMAP_USER)
 
 
 @app.route("/life/sources/add", methods=["POST"])
@@ -960,6 +962,48 @@ def event_protect(event_id):
     conn.execute("UPDATE events SET protected = 1 - protected WHERE id = ?", (event_id,))
     conn.commit()
     return redirect(url_for("life"))
+
+
+
+@app.route("/life/mail/sync", methods=["POST"])
+def mail_sync():
+    """
+    Read the mailbox and re-triage. Credentials come from the environment.
+
+    The mailbox is opened read-only and only headers plus a short snippet are
+    stored — see feeds.sync_mail. Nothing here can mark your mail read.
+    """
+    conn = db()
+    if not Config.mail_configured():
+        flash("No mailbox configured. Set AJ_IMAP_HOST, AJ_IMAP_USER, and "
+              "AJ_IMAP_PASSWORD (an app password), then restart.")
+        return redirect(url_for("life"))
+
+    source = conn.execute("SELECT * FROM sources WHERE kind = 'imap'").fetchone()
+    if source is None:
+        cur = conn.execute("""INSERT INTO sources (kind, name) VALUES ('imap', ?)""",
+                           ("Mail — " + Config.IMAP_USER,))
+        conn.commit()
+        source = conn.execute("SELECT * FROM sources WHERE id = ?",
+                              (cur.lastrowid,)).fetchone()
+    try:
+        added, flagged = feeds.sync_mail(
+            conn, source, Config.IMAP_HOST, Config.IMAP_USER, Config.IMAP_PASSWORD,
+            Config.IMAP_FOLDER, me=Config.IMAP_USER)
+        flash(str(added) + " new messages read, " + str(flagged) + " waiting on you.")
+    except Exception as exc:
+        flash("Mail sync failed: " + str(exc)[:200])
+    return redirect(url_for("life"))
+
+
+@app.route("/inbox/<int:item_id>/handled", methods=["POST"])
+def inbox_handled(item_id):
+    conn = db()
+    if conn.execute("SELECT 1 FROM inbox WHERE id = ?", (item_id,)).fetchone() is None:
+        abort(404)
+    conn.execute("UPDATE inbox SET handled = 1 - handled WHERE id = ?", (item_id,))
+    conn.commit()
+    return redirect(request.form.get("back") or url_for("life"))
 
 
 if __name__ == "__main__":

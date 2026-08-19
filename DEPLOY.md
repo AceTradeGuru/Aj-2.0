@@ -61,6 +61,28 @@ Then open the app and answer the five onboarding questions.
 
 A misconfigured deploy fails loudly instead of quietly serving an open app.
 
+## Mail (optional)
+
+Three more variables, and a restart:
+
+```bash
+AJ_IMAP_HOST=imap.gmail.com
+AJ_IMAP_USER=you@gmail.com
+AJ_IMAP_PASSWORD=<app password>     # NOT your account password
+AJ_IMAP_FOLDER=INBOX                # optional
+```
+
+Gmail: Account → Security → 2-Step Verification → App passwords. iCloud and
+Outlook have the same feature under different names.
+
+Two things worth knowing before you turn this on. An app password is a real
+credential with full mailbox access, so use it on a mailbox you'd be willing to
+lose rather than your primary identity account, and revoke it from the same page
+the moment you stop using it. And the connection is opened read-only and fetched
+with `BODY.PEEK`, so AJ can never mark your mail read — but it is still your
+mail, and the subjects of what's waiting end up in the model prompt when the
+Claude engine is on.
+
 ## Voice
 
 Nothing to configure. It uses the browser's speech engine, so it works the moment

@@ -594,3 +594,246 @@ def money_snapshot(conn, today=None, window_days=30):
         # useful single number in personal finance and the least often looked at.
         "monthly_burn": spend * (30 / window_days),
     }
+
+
+# ---------------------------------------------------------------------------
+# Mail
+# ---------------------------------------------------------------------------
+#
+# Triage, not an email client. AJ answers one question — what is actually waiting
+# on you — and to answer it needs the sender, the subject, and a couple of lines.
+# So that is all this reads: headers and a 400-byte snippet, over a mailbox opened
+# READ-ONLY, so nothing here can mark a message read, move it, or delete it.
+#
+# IMAP with an app password rather than OAuth, on purpose. Gmail's API means a
+# Google Cloud project, a consent screen, and a refresh token to babysit; an app
+# password is ninety seconds in your account settings and is revocable from the
+# same page. The credentials live in the environment and never in the database —
+# see config.IMAP_*. The trade: an app password is a real credential, so it wants
+# a mailbox you'd be willing to lose rather than your primary identity account.
+
+IMAP_LOOKBACK_DAYS = 14
+IMAP_MAX_MESSAGES = 300
+SNIPPET_BYTES = 400
+
+_HEADER_FIELDS = "FROM TO CC SUBJECT DATE MESSAGE-ID LIST-UNSUBSCRIBE AUTO-SUBMITTED PRECEDENCE"
+
+# Senders that are machines. Nothing from one of these is ever "waiting on you".
+_NOREPLY = ("no-reply", "noreply", "do-not-reply", "donotreply", "notifications@",
+            "mailer-daemon", "postmaster", "bounce", "automated")
+
+_MAIL_RULES = [
+    ("school", ("school", "teacher", "principal", "classroom", "canvas", "powerschool",
+                "homework", "assignment", "grade", "report card", "pta", "district",
+                "attendance", "field trip", "conference")),
+    ("kids", ("dance", "studio", "recital", "rehearsal", "costume", "team", "coach",
+              "practice", "band app", "troop", "camp")),
+    ("money", ("bank", "invoice", "payment", "statement", "overdue", "balance",
+               "payroll", "tax", "irs", "insurance", "loan", "wire", "billing")),
+    ("business", ("contract", "proposal", "carrier", "broker", "load", "customer",
+                  "demo", "onboarding", "renewal", "partnership", "agreement")),
+    ("receipt", ("receipt", "your order", "shipped", "delivered", "confirmation")),
+]
+
+
+def _decode_header(raw):
+    """MIME-encoded headers ('=?UTF-8?B?...?=') back to text."""
+    from email.header import decode_header, make_header
+    try:
+        return str(make_header(decode_header(raw or "")))
+    except Exception:
+        return (raw or "").strip()
+
+
+def parse_message(raw_headers, snippet=""):
+    """
+    Raw header bytes -> the fields triage needs. Pure; no network.
+
+    Returns None for a message with no Message-ID, because without one there is
+    no stable dedupe key and a re-sync would keep re-adding it.
+    """
+    import email
+    from email.utils import parseaddr, parsedate_to_datetime
+
+    if isinstance(raw_headers, bytes):
+        raw_headers = raw_headers.decode("utf-8", "replace")
+    message = email.message_from_string(raw_headers)
+
+    message_id = (message.get("Message-ID") or "").strip()
+    if not message_id:
+        return None
+
+    name, addr = parseaddr(_decode_header(message.get("From")))
+    when = None
+    try:
+        when = parsedate_to_datetime(message.get("Date"))
+    except Exception:
+        pass
+
+    return {
+        "message_id": message_id[:400],
+        "from_name": (name or addr.split("@")[0])[:120],
+        "from_addr": addr.lower()[:200],
+        "subject": _decode_header(message.get("Subject"))[:300],
+        "to": _decode_header(message.get("To"))[:500],
+        "snippet": re.sub(r"\s+", " ", (snippet or ""))[:300].strip(),
+        "day": (when.date().isoformat() if when else date.today().isoformat()),
+        "received_at": (when.isoformat(timespec="minutes") if when else ""),
+        "bulk": bool(message.get("List-Unsubscribe") or message.get("Precedence")
+                     or message.get("Auto-Submitted")),
+    }
+
+
+def triage(message, me=""):
+    """
+    Classify one message and decide whether it is waiting on you.
+
+    Rules, not a model call, for two reasons: you can read exactly why anything
+    was flagged, and mail triage runs over hundreds of messages where a per-item
+    model call would be both slow and the largest line on the bill.
+    """
+    haystack = (message["subject"] + " " + message["from_name"] + " "
+                + message["from_addr"] + " " + message["snippet"]).lower()
+
+    category = "other"
+    for name, needles in _MAIL_RULES:
+        if any(needle in haystack for needle in needles):
+            category = name
+            break
+    if message["bulk"] and category in ("other", "receipt"):
+        category = "bulk"
+
+    automated = any(marker in message["from_addr"] for marker in _NOREPLY)
+    addressed = bool(me) and me.lower() in (message.get("to") or "").lower()
+    asking = ("?" in message["subject"] or "?" in message["snippet"]
+              or any(word in haystack for word in
+                     ("please confirm", "can you", "could you", "let me know",
+                      "rsvp", "sign and return", "waiting on", "reply", "respond",
+                      "due by", "deadline", "action required")))
+
+    needs_reply = bool(
+        not message["bulk"] and not automated and asking
+        and category != "receipt"
+        # A message sent only to you is a question; one sent to sixty parents is
+        # usually an announcement. When we can't tell, err toward flagging school
+        # and money, which are the two that cost you if missed.
+        and (addressed or category in ("school", "money", "business", "kids"))
+    )
+    return category, needs_reply
+
+
+def fetch_imap(host, user, password, folder="INBOX", days=IMAP_LOOKBACK_DAYS,
+               limit=IMAP_MAX_MESSAGES):
+    """
+    Pull recent headers over IMAP. Returns [(raw_headers, snippet), ...].
+
+    Opened READ-ONLY and fetched with BODY.PEEK so the \\Seen flag is never set —
+    an assistant that silently marks your mail read is a bug you find out about
+    by missing something.
+    """
+    import imaplib
+
+    since = (date.today() - timedelta(days=days)).strftime("%d-%b-%Y")
+    client = imaplib.IMAP4_SSL(host)
+    try:
+        client.login(user, password)
+        client.select(folder, readonly=True)
+        status, data = client.search(None, "(SINCE " + since + ")")
+        if status != "OK" or not data or not data[0]:
+            return []
+        ids = data[0].split()[-limit:]
+
+        out = []
+        # Batched, because one FETCH per message over a round-trip-heavy protocol
+        # is the difference between two seconds and two minutes.
+        for start in range(0, len(ids), 50):
+            batch = b",".join(ids[start:start + 50])
+            status, chunk = client.fetch(
+                batch,
+                "(BODY.PEEK[HEADER.FIELDS (" + _HEADER_FIELDS + ")] "
+                "BODY.PEEK[TEXT]<0." + str(SNIPPET_BYTES) + ">)")
+            if status != "OK":
+                continue
+            headers, snippet = None, ""
+            for part in chunk:
+                if not isinstance(part, tuple):
+                    continue
+                marker, payload = part[0], part[1]
+                marker_text = marker.decode("utf-8", "replace") if isinstance(marker, bytes) else str(marker)
+                if "HEADER.FIELDS" in marker_text:
+                    if headers is not None:
+                        out.append((headers, snippet))
+                        snippet = ""
+                    headers = payload
+                elif "TEXT" in marker_text:
+                    snippet = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else str(payload)
+            if headers is not None:
+                out.append((headers, snippet))
+        return out
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
+def sync_mail(conn, source, host, user, password, folder="INBOX", me="", fetcher=None):
+    """
+    Read the mailbox and upsert triage rows. Returns (added, flagged).
+
+    `fetcher` is injectable so the parsing, triage, and dedupe paths are testable
+    without a live mail server — the socket is the only part that isn't.
+    """
+    fetcher = fetcher or fetch_imap
+    try:
+        raw = fetcher(host, user, password, folder)
+    except Exception as exc:
+        conn.execute("UPDATE sources SET last_error = ? WHERE id = ?",
+                     (str(exc)[:400], source["id"]))
+        conn.commit()
+        raise
+
+    added = flagged = 0
+    for headers, snippet in raw:
+        message = parse_message(headers, snippet)
+        if message is None:
+            continue
+        category, needs_reply = triage(message, me)
+        cursor = conn.execute(
+            """INSERT OR IGNORE INTO inbox (source_id, message_id, from_name, from_addr,
+               subject, snippet, day, received_at, category, needs_reply)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (source["id"], message["message_id"], message["from_name"],
+             message["from_addr"], message["subject"], message["snippet"],
+             message["day"], message["received_at"], category, int(needs_reply)))
+        added += cursor.rowcount
+        if cursor.rowcount and needs_reply:
+            flagged += 1
+
+    conn.execute("UPDATE sources SET last_synced_at = datetime('now'), last_error = '' "
+                 "WHERE id = ?", (source["id"],))
+    conn.commit()
+    return added, flagged
+
+
+def mail_snapshot(conn, today=None, days=7):
+    """What's waiting, by category. Empty and harmless when no mailbox is connected."""
+    today = today or date.today()
+    since = (today - timedelta(days=days)).isoformat()
+    rows = [dict(r) for r in conn.execute(
+        """SELECT * FROM inbox WHERE day >= ? AND handled = 0
+           ORDER BY needs_reply DESC, day DESC""", (since,))]
+    waiting = [r for r in rows if r["needs_reply"]]
+    by_category = {}
+    for row in waiting:
+        by_category[row["category"]] = by_category.get(row["category"], 0) + 1
+    return {
+        "has_data": bool(conn.execute(
+            "SELECT 1 FROM inbox LIMIT 1").fetchone()),
+        "waiting": waiting[:12],
+        "waiting_count": len(waiting),
+        "total": len(rows),
+        "by_category": by_category,
+        "oldest_waiting_days": max(
+            ((today - date.fromisoformat(r["day"])).days for r in waiting), default=0),
+    }

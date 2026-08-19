@@ -504,6 +504,23 @@ def signals(state):
                           "verdict — just the number, before it becomes the normal.",
             })
 
+    mail = state.get("mail") or {}
+    if mail.get("waiting_count"):
+        # School and money are the two that cost you something when they sit, so
+        # they set the level. Everything else is a nudge.
+        urgent = mail["by_category"].get("school", 0) + mail["by_category"].get("money", 0)
+        oldest = mail["oldest_waiting_days"]
+        out.append({
+            "level": "high" if (urgent and oldest >= 2) else "medium",
+            "label": str(mail["waiting_count"]) + " message"
+                     + ("" if mail["waiting_count"] == 1 else "s") + " waiting on a reply"
+                     + (", oldest " + str(oldest) + " days" if oldest >= 2 else ""),
+            "detail": ", ".join(k + ": " + str(v) for k, v in
+                                sorted(mail["by_category"].items(), key=lambda kv: -kv[1]))
+                      + ". Answering takes minutes; the cost of not is somebody "
+                        "else's plan becoming your Tuesday.",
+        })
+
     order = {"critical": 0, "high": 1, "medium": 2, "good": 3, "info": 4}
     out.sort(key=lambda s: order.get(s["level"], 5))
     return out
@@ -619,6 +636,7 @@ def snapshot(conn, today=None):
         "profile": dict(profile) if profile else None,
         "agenda": agenda(conn, today),
         "money": feeds.money_snapshot(conn, today),
+        "mail": feeds.mail_snapshot(conn, today),
         "goals": goals,
         "commitments": commitments,
         "milestones_overdue": milestones_overdue,

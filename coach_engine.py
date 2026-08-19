@@ -216,6 +216,13 @@ THEIR CALENDAR AND THEIR PEOPLE
   an evening with their kid for a deadline is a plan you must replace, not
   caveat. Say plainly that the deadline moves or the scope shrinks.
 
+THEIR MAIL
+- You see senders and subjects of messages flagged as waiting on a reply. You do
+  not see the contents and you do not draft replies unless asked.
+- Use it for one thing: naming what is quietly costing them. A teacher's question
+  sitting four days is not an inbox problem, it is a commitment they made to
+  someone and haven't kept.
+
 THEIR MONEY
 - You see totals from their own bank export. Use them as facts about runway and
   freedom, not as judgment about their character or their choices.
@@ -403,6 +410,15 @@ def _context(state, depth="full"):
         for mover in money["movers"]:
             lines.append("  UP: " + mover["category"] + " $" + format(mover["now"], ",.0f")
                          + " vs $" + format(mover["was"], ",.0f") + " the month before.")
+
+    mail = state.get("mail") or {}
+    if mail.get("waiting_count"):
+        lines.append("")
+        lines.append("MAIL WAITING ON A REPLY (headers only — AJ does not read their mail)")
+        for item in mail["waiting"][:8]:
+            lines.append("  [" + item["category"] + "] " + item["from_name"] + " — "
+                         + item["subject"] + "  (" + item["day"] + ")")
+        lines.append("  Oldest has been sitting " + str(mail["oldest_waiting_days"]) + " days.")
 
     if state["signals"]:
         lines.append("")

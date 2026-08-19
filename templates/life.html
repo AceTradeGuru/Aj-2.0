@@ -98,6 +98,34 @@
       </div>
     </div>
 
+    {% set mail = s.mail %}
+    {% if mail.has_data %}
+      <div class="card pad0">
+        <div class="cardhead"><h3>Waiting on a reply</h3><span class="spacer"></span>
+          <span class="tiny muted">{{ mail.waiting_count }} of {{ mail.total }} unhandled</span></div>
+        <div class="cardbody">
+          {% for item in mail.waiting %}
+            <div class="rowitem">
+              <div class="main">
+                <div class="t">{{ item.subject or '(no subject)' }}</div>
+                <div class="m">
+                  <span class="badge {{ 'at_risk' if item.category in ('school','money') else 'neutral' }}">{{ item.category }}</span>
+                  {{ item.from_name }} · {{ item.day|when }}
+                  {% if item.snippet %}<div class="tiny muted">{{ item.snippet[:120] }}…</div>{% endif %}
+                </div>
+              </div>
+              <form method="post" action="{{ url_for('inbox_handled', item_id=item.id) }}" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm">Handled</button>
+              </form>
+            </div>
+          {% else %}
+            <div class="empty">Nothing waiting on you. Rare and worth noticing.</div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
     {% if recent_tx %}
       <div class="card pad0">
         <div class="cardhead"><h3>Recent transactions</h3></div>
@@ -161,6 +189,30 @@
         <button class="btn btn-primary" style="margin-top:.9rem">Import</button>
       </form>
       <p class="tiny muted" style="margin-top:.8rem">{{ bank_note }}</p>
+    </div>
+
+    <div class="card">
+      <h3>Mail</h3>
+      {% if mail_ready %}
+        <p class="tiny muted">Reading <b>{{ mail_user }}</b> — headers only, mailbox
+          opened read-only. AJ never marks anything read and never sees the bodies.</p>
+        <form method="post" action="{{ url_for('mail_sync') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-primary" style="margin-top:.5rem">Read the inbox</button>
+        </form>
+      {% else %}
+        <p class="tiny muted">Not connected. Set three environment variables and restart:</p>
+        <div class="mono tiny" style="background:var(--line2);padding:.6rem .7rem;
+             border-radius:8px;margin-top:.5rem;line-height:1.7">
+          AJ_IMAP_HOST=imap.gmail.com<br>
+          AJ_IMAP_USER=you@gmail.com<br>
+          AJ_IMAP_PASSWORD=&lt;app password&gt;
+        </div>
+        <p class="tiny muted" style="margin-top:.6rem">
+          Gmail: Account → Security → 2-Step Verification → App passwords. Use a
+          mailbox you'd be willing to lose, and revoke it from that same page.
+          Credentials live in the environment, never in this database.</p>
+      {% endif %}
     </div>
 
     <div class="card pad0">

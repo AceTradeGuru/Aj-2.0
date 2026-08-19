@@ -241,3 +241,34 @@ CREATE TABLE IF NOT EXISTS transactions (
     UNIQUE (source_id, day, description, amount)
 );
 CREATE INDEX IF NOT EXISTS idx_tx_day ON transactions(day DESC);
+
+-- ----------------------------------------------------------------- inbox ---
+-- Mail headers, for triage only.
+--
+-- Deliberately not your email client. AJ stores the sender, the subject, and a
+-- short snippet — enough to answer "what is waiting on you and what can wait"
+-- and not enough to be a second copy of your inbox sitting in a file. Bodies are
+-- never fetched in full, and the mailbox is opened read-only so nothing here can
+-- mark a message read or delete it.
+--
+-- Credentials for the mailbox live in the environment, never in this database.
+CREATE TABLE IF NOT EXISTS inbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id   INTEGER REFERENCES sources(id) ON DELETE CASCADE,
+    message_id  TEXT NOT NULL,                    -- RFC Message-ID; the dedupe key
+    from_name   TEXT NOT NULL DEFAULT '',
+    from_addr   TEXT NOT NULL DEFAULT '',
+    subject     TEXT NOT NULL DEFAULT '',
+    snippet     TEXT NOT NULL DEFAULT '',
+    day         TEXT NOT NULL,
+    received_at TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT 'other',    -- school | money | kids | business | receipt | bulk | other
+    -- Set by rule, not by a model: addressed to you, not bulk, and asking
+    -- something. The one bit that turns a list of mail into a list of decisions.
+    needs_reply INTEGER NOT NULL DEFAULT 0,
+    -- You marking it done. AJ stops counting it against you.
+    handled     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (source_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_inbox_day ON inbox(day DESC);

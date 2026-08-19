@@ -29,7 +29,7 @@ required — see [Two engines](#two-engines).
 | **Check-in** | Two minutes a day. AJ grades it 0–100 against what was on the board, not against how hard it felt. |
 | **War room** | Think out loud, argue, bring a decision. AJ has your pace and your record in front of him. |
 | **Weekly review** | The board meeting. What moved, what you avoided, and one decision — cut, re-date, or double down. |
-| **Life** | Her dance and school calendars, and the money. Connect a feed; AJ plans around it instead of through it. |
+| **Life** | Her dance and school calendars, the money, and what's waiting on a reply. Connect a feed; AJ plans around it instead of through it. |
 
 ## Voice
 
@@ -62,6 +62,17 @@ or a Debit/Credit pair), categorizes by rule so you can see why anything landed
 where it did, and is idempotent — re-importing an overlapping statement never
 double-counts. AJ gets burn, save rate, and what moved this month against last.
 It does the arithmetic you're avoiding; it does not pick your investments.
+
+**Mail is triage, not an inbox.** Point AJ at a mailbox over IMAP with an app
+password and it reads headers and a 400-byte snippet — never full bodies — over a
+connection opened **read-only**, so nothing it does can mark a message read. Rules
+you can audit sort school / kids / money / business from bulk, and flag what is
+genuinely waiting on a reply: addressed to you, not automated, actually asking
+something. A teacher's question sitting four days stops being an inbox problem
+and becomes what it is — a promise you made someone and haven't kept.
+
+Credentials live in the environment and never in the database. Use an app
+password from a mailbox you'd be willing to lose.
 
 Set `AJ_TZ` to the zone you live in. Feeds carry UTC timestamps, and a server in
 UTC would otherwise turn a 5:30pm dance class into a 9:30pm one.
@@ -130,11 +141,11 @@ what to *say* about the numbers; it never produces them.
 | File | What's in it |
 |---|---|
 | `momentum.py` | The arithmetic of your life. Credibility, goal health, the agenda, streaks, signals, the one thing. |
-| `feeds.py` | The .ics reader (recurring events, EXDATE, timezones) and the bank CSV importer. No model calls. |
+| `feeds.py` | The .ics reader (recurring events, EXDATE, timezones), the bank CSV importer, and IMAP mail triage. No model calls. |
 | `coach_engine.py` | The voice, and six capabilities: pressure test, plan, brief, debrief, weekly review, chat. |
 | `app.py` | Flask routes, CSRF, the model budget, the Markdown filter. |
 | `aj_db.py` | Build the database; `--demo` loads a life mid-struggle. |
-| `schema.sql` | Twelve tables. The commitment ledger is the important one. |
+| `schema.sql` | Thirteen tables. The commitment ledger is the important one. |
 | `templates/_voice.html` | Speech in and out, on the browser's own engine. |
 | `config.py` | Environment-driven config; production refuses to boot underspecified. |
 
