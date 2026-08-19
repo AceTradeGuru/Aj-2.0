@@ -2,9 +2,17 @@
 {% block title %}War room{% endblock %}
 {% block crumb %}War room{% endblock %}
 {% block content %}
-<h1>War room</h1>
-<div class="sub">Think out loud, argue, or bring a decision. AJ has your goals, your pace,
-  and your commitment record in front of him — he isn&rsquo;t guessing.</div>
+<div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem">
+  <div>
+    <h1>War room</h1>
+    <div class="sub" style="margin-bottom:0">Think out loud, argue, or bring a decision.
+      AJ has your goals, your pace, your calendar, and your commitment record in front
+      of him — he isn&rsquo;t guessing.</div>
+  </div>
+  <label class="switch" title="AJ reads his answer out loud, then opens the mic for yours">
+    <input type="checkbox" id="handsfree"> Hands-free
+  </label>
+</div>
 
 <div class="card pad0">
   <div class="cardbody" style="max-height:62vh;overflow-y:auto" id="log">
@@ -12,7 +20,9 @@
       <div class="msg {{ 'aj' if m.role == 'aj' else 'you' }}">
         <div class="who">{{ 'AJ' if m.role == 'aj' else 'YOU' }}</div>
         <div>
-          <div class="bubble">{{ m.text|markdown }}</div>
+          {# The newest reply is the one hands-free mode reads aloud. #}
+          <div class="bubble"
+               {% if m.role == 'aj' and loop.last %}data-voice-auto="{{ m.id }}"{% endif %}>{{ m.text|markdown }}</div>
           <div class="stamp">{{ m.at[:16] }}{% if m.role == 'aj' and m.engine %} · {{ m.engine }}{% endif %}</div>
         </div>
       </div>
@@ -27,10 +37,15 @@
     <form method="post">
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div class="row" style="flex-wrap:nowrap">
-        <input name="message" placeholder="Say it straight." required autofocus style="flex:1">
+        <input name="message" placeholder="Say it straight." required autofocus style="flex:1"
+               data-voice-input data-voice-submit>
         <button class="btn btn-primary">Send</button>
       </div>
     </form>
+    <div class="voicebar" style="margin-top:.5rem">
+      <span>Tap the mic and talk — it sends when you stop. Hands-free keeps the
+        conversation going without touching anything.</span>
+    </div>
   </div>
 </div>
 <script>

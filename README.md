@@ -29,6 +29,42 @@ required — see [Two engines](#two-engines).
 | **Check-in** | Two minutes a day. AJ grades it 0–100 against what was on the board, not against how hard it felt. |
 | **War room** | Think out loud, argue, bring a decision. AJ has your pace and your record in front of him. |
 | **Weekly review** | The board meeting. What moved, what you avoided, and one decision — cut, re-date, or double down. |
+| **Life** | Her dance and school calendars, and the money. Connect a feed; AJ plans around it instead of through it. |
+
+## Voice
+
+Tap the mic and talk — the check-in, the war room, and any commitment box take
+dictation. Tap **Read it** and AJ reads the brief, the debrief, or the board
+meeting out loud. In the war room, **hands-free** makes it a conversation: AJ
+answers aloud, then opens the mic again for you.
+
+It runs on the browser's own speech engine, so there is no key, no per-minute
+cost, and on browsers that recognize locally your voice never leaves the device.
+Works in Chrome, Edge, and Safari; Firefox has synthesis but no recognition, and
+everything falls back to typing. The toggle lives per-device — the phone in the
+truck says yes, the laptop in a quiet office says no.
+
+## The rest of your life
+
+Goals are half a day. The other half — her recital, the science fair, the tuition
+draft — is what decides whether the goals get worked at all, so AJ reads it too.
+
+**Calendars are subscriptions, not integrations.** BAND publishes one
+(Calendar → Manage Events → Export Band Calendars → copy the URL), and so do
+Canvas, PowerSchool, Google Calendar, and every studio app worth using. One
+reader covers dance, school, and the family calendar — no API keys, no OAuth
+screen, no partnership to apply for. Paste the URL and re-sync; when the studio
+moves a class, your copy moves with it and nothing duplicates.
+
+**Money comes from the export you already have.** Download your bank's CSV and
+drop it in. The importer reads both shapes banks ship (one signed Amount column,
+or a Debit/Credit pair), categorizes by rule so you can see why anything landed
+where it did, and is idempotent — re-importing an overlapping statement never
+double-counts. AJ gets burn, save rate, and what moved this month against last.
+It does the arithmetic you're avoiding; it does not pick your investments.
+
+Set `AJ_TZ` to the zone you live in. Feeds carry UTC timestamps, and a server in
+UTC would otherwise turn a 5:30pm dance class into a 9:30pm one.
 
 ## The idea
 
@@ -50,6 +86,10 @@ start to target.
 **Silence.** The check that catches what a status column never will: a goal
 whose metric hasn't been measured in two weeks gets called out no matter how
 green it looks. A goal you aren't measuring is a goal you've stopped working on.
+
+And one rule that outranks all three: **the calendar wins.** A coach that tells
+you to grind on the evening of your daughter's recital is a coach you switch off
+by Thursday. Protected events are never planned over.
 
 ## Two engines
 
@@ -89,11 +129,13 @@ what to *say* about the numbers; it never produces them.
 
 | File | What's in it |
 |---|---|
-| `momentum.py` | The arithmetic of your life. Credibility, goal health, streaks, signals, the one thing. |
+| `momentum.py` | The arithmetic of your life. Credibility, goal health, the agenda, streaks, signals, the one thing. |
+| `feeds.py` | The .ics reader (recurring events, EXDATE, timezones) and the bank CSV importer. No model calls. |
 | `coach_engine.py` | The voice, and six capabilities: pressure test, plan, brief, debrief, weekly review, chat. |
 | `app.py` | Flask routes, CSRF, the model budget, the Markdown filter. |
 | `aj_db.py` | Build the database; `--demo` loads a life mid-struggle. |
-| `schema.sql` | Nine tables. The commitment ledger is the important one. |
+| `schema.sql` | Twelve tables. The commitment ledger is the important one. |
+| `templates/_voice.html` | Speech in and out, on the browser's own engine. |
 | `config.py` | Environment-driven config; production refuses to boot underspecified. |
 
 ## What it costs

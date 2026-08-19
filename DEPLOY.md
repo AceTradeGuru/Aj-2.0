@@ -32,6 +32,7 @@ Three things you must set by hand in the dashboard (none are read from the repo)
 | `SECRET_KEY` | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `AJ_PASSCODE` | The gate on the whole app. Production refuses to boot without it. |
 | `ANTHROPIC_API_KEY` | Optional. Without it the offline coach runs. |
+| `AJ_TZ` | The zone you live in, e.g. `America/New_York`. **Set this.** Calendar feeds carry UTC timestamps, and a server in UTC turns a 5:30pm class into 9:30pm. |
 
 **The disk is not optional.** Everything lives in one SQLite file. Without the
 persistent disk in `render.yaml` (mounted at `/var/data`, with `AJ_DB` pointing
@@ -59,6 +60,14 @@ Then open the app and answer the five onboarding questions.
 - secure cookies are off
 
 A misconfigured deploy fails loudly instead of quietly serving an open app.
+
+## Voice
+
+Nothing to configure. It uses the browser's speech engine, so it works the moment
+you open the app in Chrome, Edge, or Safari — over HTTPS, which the deploy above
+already gives you. Microphone access requires a secure origin, so voice input
+works on `localhost` and on your deployed domain, but not over plain http on a
+LAN address.
 
 ## Backups
 

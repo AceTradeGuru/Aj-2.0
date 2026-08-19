@@ -14,7 +14,10 @@
         <label>What did you actually do today?
           <span class="hint">— outcomes, not activities</span></label>
         <textarea name="log" placeholder="Shipped the pricing page. Twenty carrier calls, three demos booked."
-                  autofocus>{{ entry.log if entry else '' }}</textarea>
+                  autofocus data-voice-input>{{ entry.log if entry else '' }}</textarea>
+        <div class="voicebar" style="margin-top:.4rem" data-voice-slot>
+          Talk it through instead of typing — the mic fills this box.
+        </div>
 
         <div class="fieldrow">
           <div>
@@ -46,12 +49,13 @@
         <div class="briefhead">
           <span class="who">AJ&rsquo;s debrief</span>
           <span class="badge {{ 'brand' if entry.engine == 'claude' else 'neutral' }}">{{ entry.engine }}</span>
+          <button class="btn btn-ghost btn-sm" id="readdebrief" type="button">▶ Read it</button>
           <span class="spacer"></span>
           <span style="font-size:1.6rem;font-weight:800;letter-spacing:-1px;
             color:{{ 'var(--brand)' if entry.grade >= 70 else '#f87171' }}">{{ entry.grade }}<span
             style="font-size:.8rem;font-weight:600;color:#8b95ab">/100</span></span>
         </div>
-        {{ entry.debrief|markdown }}
+        <div data-voice-read="#readdebrief">{{ entry.debrief|markdown }}</div>
       </div>
     {% endif %}
   </div>

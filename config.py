@@ -37,6 +37,12 @@ class Config:
 
     DB_PATH = os.environ.get("AJ_DB", "aj.db")
 
+    # The zone you actually live in. Calendar feeds carry timestamps in UTC or in
+    # the studio's zone; they get converted into this one for display. Unset means
+    # "whatever the machine thinks", which is right on a laptop and wrong on a
+    # server in UTC — so set it before you deploy.
+    TZ = os.environ.get("AJ_TZ", "")
+
     SESSION_COOKIE_SECURE = _bool("SESSION_COOKIE_SECURE", default=IS_PROD)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"

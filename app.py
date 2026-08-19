@@ -37,6 +37,7 @@ from flask import (Flask, abort, flash, g, redirect, render_template, request,
 from markupsafe import Markup, escape
 
 import coach_engine
+import feeds
 import momentum
 from aj_db import DB_FILE, create_tables, get_connection
 from config import Config, validate
@@ -366,7 +367,7 @@ def onboard():
             (request.form.get("values_text") or "").strip()[:2000],
             (request.form.get("stakes") or "").strip()[:2000],
             max(1, min(int(_f("horizon_years", 3)), 30)),
-            max(0, min(int(_f("intensity", 70)), 100)),
+            max(0, min(int(_f("intensity", 90)), 100)),
         )
         if not fields[0] or not fields[1]:
             flash("AJ needs your name and the north star. The rest can wait.")
@@ -775,7 +776,7 @@ def settings():
     if request.method == "POST":
         conn.execute("UPDATE profile SET intensity=?, north_star=?, identity=?, "
                      "values_text=?, stakes=?, horizon_years=? WHERE id=1",
-                     (max(0, min(int(_f("intensity", 70)), 100)),
+                     (max(0, min(int(_f("intensity", 90)), 100)),
                       (request.form.get("north_star") or "").strip()[:2000],
                       (request.form.get("identity") or "").strip()[:2000],
                       (request.form.get("values_text") or "").strip()[:2000],
@@ -793,6 +794,172 @@ def settings():
            WHERE month = ? GROUP BY feature ORDER BY SUM(cents) DESC""", (_month_key(),))]
     return render_template("settings.html", months=months, features=features,
                            spent=spend_cents(conn), cap=Config.AI_MONTHLY_CAP_CENTS)
+
+
+
+# ---------------------------------------------------------------------- life --
+#
+# Everything that isn't a goal but decides whether goals happen: her schedule,
+# school, and the money. Feeds are subscriptions with a URL — see feeds.py for
+# why that beats an integration.
+
+FEED_KINDS = {"ics": "Calendar subscription (.ics)", "csv": "Bank export (CSV)"}
+
+
+@app.route("/life")
+def life():
+    conn = db()
+    state = momentum.snapshot(conn)
+    sources = [dict(r) for r in conn.execute(
+        "SELECT * FROM sources ORDER BY kind, name")]
+    for source in sources:
+        source["event_count"] = conn.execute(
+            "SELECT COUNT(*) AS c FROM events WHERE source_id = ? AND day >= ?",
+            (source["id"], state["today"].isoformat())).fetchone()["c"]
+        source["tx_count"] = conn.execute(
+            "SELECT COUNT(*) AS c FROM transactions WHERE source_id = ?",
+            (source["id"],)).fetchone()["c"]
+    recent_tx = [dict(r) for r in conn.execute(
+        "SELECT * FROM transactions ORDER BY day DESC, id DESC LIMIT 25")]
+    return render_template("life.html", s=state, sources=sources, recent_tx=recent_tx,
+                           kinds=FEED_KINDS, bank_note=feeds.LIVE_BANK_NOTE)
+
+
+@app.route("/life/sources/add", methods=["POST"])
+def source_add():
+    conn = db()
+    kind = request.form.get("kind")
+    if kind not in FEED_KINDS:
+        abort(400, description="Unknown feed type.")
+    name = (request.form.get("name") or "").strip()[:120]
+    url = feeds.normalize_feed_url(request.form.get("url") or "")[:1000]
+    person = (request.form.get("person") or "").strip()[:60]
+    if not name:
+        flash("Give the feed a name you'll recognize on a Tuesday.")
+        return redirect(url_for("life"))
+    if kind == "ics" and not url:
+        flash("A calendar feed needs its subscription URL. In BAND: Calendar → "
+              "Manage Events → Export Band Calendars → copy the address.")
+        return redirect(url_for("life"))
+
+    cur = conn.execute("""INSERT INTO sources (kind, name, url, person)
+                          VALUES (?,?,?,?)""", (kind, name, url, person))
+    conn.commit()
+    if kind == "ics":
+        return _sync_one(conn, cur.lastrowid)
+    flash("Added. Now import an export into it.")
+    return redirect(url_for("life"))
+
+
+def _sync_one(conn, source_id):
+    """Re-read one feed and report honestly. Never raises into a page."""
+    source = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+    if source is None:
+        abort(404)
+    if source["kind"] != "ics":
+        flash("Only calendar feeds sync on their own. A bank export is a file you import.")
+        return redirect(url_for("life"))
+    try:
+        added, updated = feeds.sync_ics(conn, source, tz=Config.TZ or None)
+        flash(source["name"] + ": " + str(added) + " new, " + str(updated) + " changed.")
+    except Exception as exc:
+        flash("Couldn't read " + source["name"] + " — " + str(exc)[:200])
+    return redirect(url_for("life"))
+
+
+@app.route("/life/sources/<int:source_id>/sync", methods=["POST"])
+def source_sync(source_id):
+    return _sync_one(db(), source_id)
+
+
+@app.route("/life/sync", methods=["POST"])
+def sync_all():
+    conn = db()
+    rows = conn.execute("SELECT * FROM sources WHERE kind='ics' AND enabled=1").fetchall()
+    added = updated = failed = 0
+    for source in rows:
+        try:
+            a, u = feeds.sync_ics(conn, source, tz=Config.TZ or None)
+            added, updated = added + a, updated + u
+        except Exception:
+            failed += 1                 # the reason is already on the source row
+    flash(str(added) + " new events, " + str(updated) + " changed"
+          + (", " + str(failed) + " feed(s) failed — see below." if failed else "."))
+    return redirect(url_for("life"))
+
+
+@app.route("/life/sources/<int:source_id>/toggle", methods=["POST"])
+def source_toggle(source_id):
+    conn = db()
+    conn.execute("UPDATE sources SET enabled = 1 - enabled WHERE id = ?", (source_id,))
+    conn.commit()
+    return redirect(url_for("life"))
+
+
+@app.route("/life/sources/<int:source_id>/delete", methods=["POST"])
+def source_delete(source_id):
+    conn = db()
+    row = conn.execute("SELECT name FROM sources WHERE id = ?", (source_id,)).fetchone()
+    if row is None:
+        abort(404)
+    # Events cascade with the feed; transactions deliberately do not (ON DELETE
+    # SET NULL), because your money history should outlive the CSV you got it from.
+    conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    conn.commit()
+    flash("Removed " + row["name"] + ". Its calendar entries went with it.")
+    return redirect(url_for("life"))
+
+
+@app.route("/life/bank/import", methods=["POST"])
+def bank_import():
+    """Take a bank CSV by upload or paste, and say exactly what came in."""
+    conn = db()
+    source_id = request.form.get("source_id")
+    text = ""
+    upload = request.files.get("file")
+    if upload and upload.filename:
+        text = upload.read(Config.MAX_CONTENT_LENGTH).decode("utf-8", "replace")
+    if not text.strip():
+        text = request.form.get("pasted") or ""
+    if not text.strip():
+        flash("Nothing to import — pick a file or paste the rows.")
+        return redirect(url_for("life"))
+
+    if source_id:
+        source_id = int(source_id)
+    else:
+        cur = conn.execute("""INSERT INTO sources (kind, name, last_synced_at)
+                              VALUES ('csv', 'Bank export', datetime('now'))""")
+        source_id = cur.lastrowid
+
+    rows, problems = feeds.read_bank_csv(text)
+    if not rows:
+        flash("Couldn't read that file. " + (problems[0] if problems else ""))
+        return redirect(url_for("life"))
+
+    added = feeds.import_transactions(conn, source_id, rows)
+    conn.execute("UPDATE sources SET last_synced_at = datetime('now') WHERE id = ?",
+                 (source_id,))
+    conn.commit()
+    note = (str(added) + " new transactions from " + str(len(rows)) + " rows"
+            + " (" + str(len(rows) - added) + " already imported)" if added != len(rows)
+            else str(added) + " new transactions")
+    if problems:
+        note += " — " + str(len(problems)) + " row(s) skipped: " + problems[0]
+    flash(note)
+    return redirect(url_for("life"))
+
+
+@app.route("/events/<int:event_id>/protect", methods=["POST"])
+def event_protect(event_id):
+    """Mark an event immovable. AJ plans around protected time, never through it."""
+    conn = db()
+    row = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+    if row is None:
+        abort(404)
+    conn.execute("UPDATE events SET protected = 1 - protected WHERE id = ?", (event_id,))
+    conn.commit()
+    return redirect(url_for("life"))
 
 
 if __name__ == "__main__":

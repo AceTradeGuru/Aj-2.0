@@ -35,12 +35,13 @@
     <span class="who">AJ&rsquo;s brief</span>
     <span class="badge {{ 'brand' if brief_engine == 'claude' else 'neutral' }}">{{ brief_engine }}</span>
     <span class="spacer"></span>
+    <button class="btn btn-ghost btn-sm" id="readbrief" type="button">▶ Read it</button>
     <form method="post" action="{{ url_for('brief_refresh') }}" class="inline">
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button class="btn btn-ghost btn-sm">Re-brief</button>
     </form>
   </div>
-  {{ brief|markdown }}
+  <div data-voice-read="#readbrief">{{ brief|markdown }}</div>
 </div>
 
 <div class="grid split">
@@ -92,7 +93,8 @@
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="{{ url_for('dashboard') }}">
           <div class="row" style="gap:.5rem;flex-wrap:nowrap;align-items:stretch">
-            <input name="text" placeholder="What are you committing to?" required style="flex:1">
+            <input name="text" placeholder="What are you committing to?" required style="flex:1"
+                   data-voice-input>
             <input type="date" name="due_date" required style="width:150px"
                    value="{{ today.isoformat() }}">
             <select name="goal_id" style="width:170px">

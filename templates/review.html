@@ -19,9 +19,12 @@
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:.5rem">
         <div class="eyebrow">Minutes</div>
-        <span class="badge {{ 'brand' if review.engine == 'claude' else 'neutral' }}">{{ review.engine }}</span>
+        <div class="row tight">
+          <button class="btn btn-ghost btn-sm" id="readreview" type="button">▶ Read it</button>
+          <span class="badge {{ 'brand' if review.engine == 'claude' else 'neutral' }}">{{ review.engine }}</span>
+        </div>
       </div>
-      <div class="doc">{{ review.body|markdown }}</div>
+      <div class="doc" data-voice-read="#readreview">{{ review.body|markdown }}</div>
     </div>
 
     {% if past %}

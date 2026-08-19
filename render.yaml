@@ -29,6 +29,8 @@ services:
     envVars:
       - key: AJ_DB
         value: /var/data/aj.db
+      - key: AJ_TZ
+        value: America/New_York      # set this to where you actually live
       - key: AJ_ENV
         value: production
       - key: AJ_DEBUG

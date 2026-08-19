@@ -36,9 +36,9 @@
       <div>
         <label>How hard should AJ push? <span class="hint">— 0 steady hand, 100 shark tank</span></label>
         <input type="range" name="intensity" min="0" max="100" step="5"
-               value="{{ p.intensity if p else 70 }}"
+               value="{{ p.intensity if p else 90 }}"
                oninput="document.getElementById('iv').textContent = this.value">
-        <div class="tiny muted">Intensity: <b id="iv">{{ p.intensity if p else 70 }}</b></div>
+        <div class="tiny muted">Intensity: <b id="iv">{{ p.intensity if p else 90 }}</b></div>
       </div>
     </div>
 

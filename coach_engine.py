@@ -37,7 +37,7 @@ import os
 import re
 from datetime import date, timedelta
 
-from momentum import format_delta, format_value
+from momentum import busy_hours, format_delta, format_value
 
 MODEL = "claude-opus-5"
 
@@ -206,6 +206,26 @@ WHAT YOU ALWAYS DO
   plan is wrong — find another. Their health and their people are not resources
   to spend on a quarter.
 
+THEIR CALENDAR AND THEIR PEOPLE
+- You can see their real schedule — school, dance, family. Plan around it, never
+  through it. Never propose work in a block the calendar has already spent, and
+  never treat a recital, a game, or a conference as an obstacle. It is the point.
+- When a big day is coming, say so and front-load the week. That is the single
+  most useful thing a chief of staff does.
+- If their stated non-negotiables include their family, then a plan that trades
+  an evening with their kid for a deadline is a plan you must replace, not
+  caveat. Say plainly that the deadline moves or the scope shrinks.
+
+THEIR MONEY
+- You see totals from their own bank export. Use them as facts about runway and
+  freedom, not as judgment about their character or their choices.
+- You are not a financial adviser and you do not pretend to be one. No specific
+  securities, no tax advice, no "you should invest in X". What you do is the
+  arithmetic they are avoiding: what the burn is, what the save rate is, what a
+  category did this month against last, and how many months of freedom that buys.
+- Connect money to the goals, because that is the part they actually feel: what
+  the runway means for how long they can keep building.
+
 You are not a cheerleader and you are not a critic. You are the person who
 believes they can do the thing and is unwilling to watch them not do it."""
 
@@ -342,6 +362,47 @@ def _context(state, depth="full"):
                 lines.append("      did: " + ci["log"])
             if ci["blockers"]:
                 lines.append("      blocked by: " + ci["blockers"])
+
+    ag = state.get("agenda") or {}
+    if ag.get("connected"):
+        lines.append("")
+        lines.append("THEIR ACTUAL DAY (from connected calendars — school, dance, family)")
+        if ag["today"]:
+            for e in ag["today"]:
+                when = e["start_time"] + "-" + e["end_time"] if e["start_time"] else "all day"
+                lines.append("  TODAY " + when + "  " + e["title"]
+                             + (" @ " + e["location"] if e["location"] else "")
+                             + ("  [" + e["person"] + "]" if e["person"] else "")
+                             + ("  <-- this reshapes the day" if e["is_big"] else ""))
+        else:
+            lines.append("  Today: nothing on the calendar.")
+        for e in ag["tomorrow"]:
+            when = e["start_time"] if e["start_time"] else "all day"
+            lines.append("  TOMORROW " + when + "  " + e["title"])
+        for e in ag["upcoming"][:8]:
+            lines.append("  " + e["day"] + " " + (e["start_time"] or "all day") + "  "
+                         + e["title"] + ("  <-- major" if e["is_big"] else ""))
+        committed = busy_hours(ag["today"])
+        if committed:
+            lines.append("  Hours of today already committed to the calendar: "
+                         + format(committed, ".1f"))
+
+    money = state.get("money") or {}
+    if money.get("has_data"):
+        lines.append("")
+        lines.append("MONEY (last " + str(money["window_days"]) + " days, from their bank export)")
+        lines.append("  In $" + format(money["income"], ",.0f") + " / out $"
+                     + format(money["spend"], ",.0f") + " / net $"
+                     + format(money["net"], ",.0f") + ".")
+        lines.append("  Saved $" + format(money["saved"], ",.0f") + " ("
+                     + str(round(money["save_rate"] * 100)) + "% of income). Burn is about $"
+                     + format(money["monthly_burn"], ",.0f") + "/month.")
+        lines.append("  Biggest categories: "
+                     + ", ".join(c + " $" + format(v, ",.0f")
+                                 for c, v in money["top_categories"][:5]) + ".")
+        for mover in money["movers"]:
+            lines.append("  UP: " + mover["category"] + " $" + format(mover["now"], ",.0f")
+                         + " vs $" + format(mover["was"], ",.0f") + " the month before.")
 
     if state["signals"]:
         lines.append("")
@@ -746,7 +807,26 @@ def _offline_brief(state):
         head = ("**Everything on the board is at or ahead of pace.** That is the moment "
                 "to push, not coast — " + str(len(active)) + " active goals, none behind.")
 
-    out = [head, "", "## The one thing", "**" + one["text"] + "**", "", one["why"]]
+    out = [head]
+
+    # The day as it actually is, before anything is demanded of it.
+    ag = state.get("agenda") or {}
+    if ag.get("connected") and (ag.get("today") or ag.get("tomorrow")):
+        out += ["", "## Today's shape"]
+        for event in ag["today"]:
+            when = event["start_time"] or "all day"
+            out.append("- **" + when + "** " + event["title"]
+                       + (" — " + event["location"] if event["location"] else "")
+                       + ("  **This is the day. Work around it.**" if event["is_big"] else ""))
+        if not ag["today"]:
+            out.append("- Calendar is clear. That is a gift and it will not repeat.")
+        soon = [e for e in ag.get("upcoming", []) if e["is_big"]][:1]
+        if soon:
+            days_out = (date.fromisoformat(soon[0]["day"]) - state["today"]).days
+            out.append("- **" + soon[0]["title"] + "** in " + str(days_out)
+                       + " days — front-load the week now.")
+
+    out += ["", "## The one thing", "**" + one["text"] + "**", "", one["why"]]
 
     if bad:
         out += ["", "## What's slipping"]
@@ -771,6 +851,18 @@ def _offline_brief(state):
     else:
         challenge = ("Add one commitment that scares you slightly and put a date on it "
                      "before you close this page.")
+    money = state.get("money") or {}
+    if money.get("has_data") and (money["net"] < 0 or money["movers"]):
+        out += ["", "## Money"]
+        if money["net"] < 0:
+            out.append("- Out by **$" + format(-money["net"], ",.0f") + "** over "
+                       + str(money["window_days"]) + " days. Burn is about $"
+                       + format(money["monthly_burn"], ",.0f") + "/month.")
+        for mover in money["movers"][:2]:
+            out.append("- " + mover["category"].title() + " $"
+                       + format(mover["now"], ",.0f") + " this month against $"
+                       + format(mover["was"], ",.0f") + " last.")
+
     out += ["", "## The challenge", challenge]
     return "\n".join(out)
 

@@ -232,6 +232,17 @@
   .msg .stamp { font-size:.68rem; color:var(--faint); margin-top:.3rem; }
 
   .spark { display:block; width:100%; height:56px; }
+
+  /* ------------------------------------------------------------- voice -- */
+  .mic { margin-left:.35rem; }
+  .mic.listening { background:var(--at_risk); color:#fff; border-color:var(--at_risk);
+                   animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+  .voicebar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+              font-size:.78rem; color:var(--muted); }
+  .switch { display:inline-flex; align-items:center; gap:.4rem; cursor:pointer;
+            font-weight:700; font-size:.78rem; color:var(--text); }
+  .switch input { width:auto; }
   .pill-nav { display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1rem; }
   .pill-nav a { padding:.3rem .75rem; border-radius:99px; font-size:.8rem; font-weight:700;
                 background:#fff; border:1px solid var(--line); color:var(--muted); }
@@ -253,6 +264,10 @@
         {% elif s is defined and s.streak.days %}<span class="tag calm">{{ s.streak.days }}</span>{% endif %}
       </a>
       <a href="{{ url_for('warroom') }}" class="{{ 'on' if request.endpoint == 'warroom' }}">War room</a>
+      <a href="{{ url_for('life') }}" class="{{ 'on' if request.endpoint == 'life' }}">
+        Life
+        {% if s is defined and s.agenda.today %}<span class="tag calm">{{ s.agenda.today|length }}</span>{% endif %}
+      </a>
       <a href="{{ url_for('review') }}" class="{{ 'on' if request.endpoint == 'review' }}">Weekly review</a>
       <div class="navgroup">You</div>
       <a href="{{ url_for('settings') }}" class="{{ 'on' if request.endpoint == 'settings' }}">Mandate &amp; spend</a>
@@ -283,5 +298,6 @@
     </main>
   </div>
 </div>
+{% include "_voice.html" %}
 </body>
 </html>

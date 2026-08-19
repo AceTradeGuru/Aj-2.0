@@ -27,8 +27,10 @@ CREATE TABLE IF NOT EXISTS profile (
     -- What you're running from. The honest half of motivation.
     stakes          TEXT    NOT NULL DEFAULT '',
     horizon_years   INTEGER NOT NULL DEFAULT 3,
-    -- 0-100. How hard AJ pushes. 20 = supportive, 80 = shark tank.
-    intensity       INTEGER NOT NULL DEFAULT 70,
+    -- 0-100. How hard AJ pushes. 20 = supportive, 90 = shark tank.
+    -- Defaults high: you hired a CEO, not a cheerleader. Turn it down in
+    -- Mandate & spend if a season calls for a steady hand instead.
+    intensity       INTEGER NOT NULL DEFAULT 90,
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     onboarded_at    TEXT
 );
@@ -164,3 +166,78 @@ CREATE TABLE IF NOT EXISTS ai_spend (
     at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_spend_month ON ai_spend(month);
+
+-- ==========================================================================
+-- The rest of the life
+-- ==========================================================================
+--
+-- Goals are only half of a day. The other half — her recital, the science fair,
+-- the tuition draft, the thing due Friday — is what actually decides whether a
+-- goal gets worked on. AJ can't coach around a calendar it can't see, and a coach
+-- that tells you to grind on the Tuesday of her recital is a coach you switch off.
+--
+-- Everything below arrives from a feed rather than from typing. The design rule
+-- is that a feed is a *subscription with a URL*, not an integration with a
+-- partnership: BAND, Canvas, PowerSchool, and Google Calendar all publish an .ics
+-- address, so one reader covers dance, school, and the family calendar at once.
+
+-- --------------------------------------------------------------- sources ---
+-- Where outside data comes from. One row per feed you've connected.
+CREATE TABLE IF NOT EXISTS sources (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,                    -- ics | csv | imap
+    name           TEXT NOT NULL,                    -- "Dance — BAND calendar"
+    url            TEXT NOT NULL DEFAULT '',         -- the .ics subscription address
+    -- Whose life this feed describes. Lets AJ say "her recital" instead of
+    -- listing an event with no owner.
+    person         TEXT NOT NULL DEFAULT '',
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    last_synced_at TEXT,
+    -- The last failure, kept and shown. A feed that silently stopped syncing is
+    -- worse than no feed: you'd trust a schedule that stopped being true.
+    last_error     TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ---------------------------------------------------------------- events ---
+-- Calendar entries pulled from an .ics feed.
+--
+-- uid comes from the feed and is what makes a re-sync an update instead of a
+-- duplicate — the same recital re-imported nightly for three weeks must stay one
+-- row, including when the studio moves its call time.
+CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id  INTEGER REFERENCES sources(id) ON DELETE CASCADE,
+    uid        TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    day        TEXT NOT NULL,                        -- YYYY-MM-DD, local
+    start_time TEXT NOT NULL DEFAULT '',             -- HH:MM, empty for all-day
+    end_time   TEXT NOT NULL DEFAULT '',
+    location   TEXT NOT NULL DEFAULT '',
+    person     TEXT NOT NULL DEFAULT '',
+    -- Set when you tell AJ this one is immovable. Non-negotiables get protected
+    -- in planning rather than scheduled over.
+    protected  INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (source_id, uid)
+);
+CREATE INDEX IF NOT EXISTS idx_events_day ON events(day);
+
+-- ---------------------------------------------------------- transactions ---
+-- Money in and out. Positive is income, negative is spend.
+--
+-- Imported from the CSV your bank already exports, deliberately: an aggregator
+-- needs your banking credentials and a monthly fee to tell you what a download
+-- tells you for free. See feeds.py for what live bank sync would take instead.
+CREATE TABLE IF NOT EXISTS transactions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id   INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+    day         TEXT NOT NULL,
+    description TEXT NOT NULL,
+    amount      REAL NOT NULL,                       -- + income, - spend
+    category    TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Re-importing an overlapping export is normal and must not double-count.
+    UNIQUE (source_id, day, description, amount)
+);
+CREATE INDEX IF NOT EXISTS idx_tx_day ON transactions(day DESC);

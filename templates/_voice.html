@@ -1,0 +1,198 @@
+{#
+  AJ 2.0 — voice.
+
+  Built on the browser's own SpeechRecognition and SpeechSynthesis rather than a
+  speech API, for three reasons: it costs nothing, it adds no key to a personal
+  app, and dictation never leaves the device on browsers that recognize locally.
+  The trade is real and stated in the UI — support is good in Chrome, Edge, and
+  Safari, and recognition is absent in Firefox. Everything degrades to typing.
+
+  Three behaviors:
+    * a mic button on any input marked [data-voice-input]
+    * a speak button on any block marked [data-voice-read]
+    * hands-free in the war room: talk, it sends, AJ answers out loud
+
+  The toggle lives in localStorage, not the profile, because whether AJ talks is
+  a fact about the device you're holding — the phone in the truck says yes, the
+  laptop in a quiet office says no.
+#}
+<script>
+(function () {
+  "use strict";
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var synth = window.speechSynthesis;
+  var HANDS_FREE_KEY = "aj.handsfree";
+  var VOICE_OUT_KEY = "aj.voiceout";
+
+  var AJ = window.AJVoice = {
+    canListen: !!SR,
+    canSpeak: !!synth,
+    handsFree: localStorage.getItem(HANDS_FREE_KEY) === "1",
+    voiceOut: localStorage.getItem(VOICE_OUT_KEY) !== "0"
+  };
+
+  // ---------------------------------------------------------------- speaking --
+
+  // The coach writes Markdown. Read aloud, "## The one thing" and "**overdue**"
+  // are noise, so strip the syntax and keep the sentence.
+  function plain(text) {
+    return (text || "")
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/^#{1,6}\s*/gm, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/[*_`>]/g, "")
+      .replace(/^\s*[-•]\s*/gm, ", ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  var preferred = null;
+  function pickVoice() {
+    if (preferred || !synth) { return preferred; }
+    var voices = synth.getVoices() || [];
+    // Prefer a natural-sounding local English voice; fall back to whatever the
+    // device offers rather than refusing to speak.
+    var ranked = ["Google US English", "Samantha", "Daniel", "Alex", "Microsoft Guy"];
+    for (var i = 0; i < ranked.length; i++) {
+      var hit = voices.find(function (v) { return v.name.indexOf(ranked[i]) === 0; });
+      if (hit) { preferred = hit; return hit; }
+    }
+    preferred = voices.find(function (v) { return /^en[-_]/i.test(v.lang); }) || voices[0] || null;
+    return preferred;
+  }
+  if (synth) { synth.onvoiceschanged = function () { preferred = null; pickVoice(); }; }
+
+  AJ.speak = function (text, onDone) {
+    if (!synth) { if (onDone) { onDone(); } return; }
+    synth.cancel();
+    var body = plain(text);
+    if (!body) { if (onDone) { onDone(); } return; }
+    var utter = new SpeechSynthesisUtterance(body);
+    var voice = pickVoice();
+    if (voice) { utter.voice = voice; }
+    utter.rate = 1.04;          // a CEO briefing you, not a meditation app
+    utter.pitch = 0.95;
+    utter.onend = function () { if (onDone) { onDone(); } };
+    utter.onerror = function () { if (onDone) { onDone(); } };
+    synth.speak(utter);
+  };
+
+  AJ.stop = function () { if (synth) { synth.cancel(); } };
+
+  // --------------------------------------------------------------- listening --
+
+  var recognition = null;
+  AJ.listen = function (target, options) {
+    options = options || {};
+    if (!SR) { return false; }
+    if (recognition) { try { recognition.stop(); } catch (e) {} recognition = null; }
+
+    AJ.stop();                  // never listen to yourself talking
+    recognition = new SR();
+    recognition.lang = navigator.language || "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = !!options.continuous;
+    recognition.maxAlternatives = 1;
+
+    var base = (target.value || "").trim();
+    var button = options.button;
+    if (button) { button.classList.add("listening"); button.textContent = "● listening"; }
+
+    recognition.onresult = function (event) {
+      var said = "";
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        said += event.results[i][0].transcript;
+      }
+      target.value = (base ? base + " " : "") + said.trim();
+      // Textareas that grow while you talk keep the newest words visible.
+      target.scrollTop = target.scrollHeight;
+    };
+    recognition.onerror = function (event) {
+      if (button) { button.classList.remove("listening"); button.textContent = options.label || "🎤"; }
+      if (event.error === "not-allowed" && options.onDenied) { options.onDenied(); }
+    };
+    recognition.onend = function () {
+      if (button) { button.classList.remove("listening"); button.textContent = options.label || "🎤"; }
+      recognition = null;
+      if (options.autoSubmit && (target.value || "").trim() && target.form) {
+        target.form.requestSubmit ? target.form.requestSubmit() : target.form.submit();
+      }
+      if (options.onEnd) { options.onEnd(); }
+    };
+    recognition.start();
+    return true;
+  };
+
+  AJ.stopListening = function () {
+    if (recognition) { try { recognition.stop(); } catch (e) {} }
+  };
+
+  // ------------------------------------------------------------------ wiring --
+
+  document.addEventListener("DOMContentLoaded", function () {
+    // Mic buttons: any input or textarea tagged [data-voice-input].
+    document.querySelectorAll("[data-voice-input]").forEach(function (field) {
+      if (!AJ.canListen) { return; }
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-ghost btn-sm mic";
+      button.textContent = "🎤";
+      button.title = "Dictate";
+      button.addEventListener("click", function () {
+        if (button.classList.contains("listening")) { AJ.stopListening(); return; }
+        AJ.listen(field, {
+          button: button,
+          autoSubmit: field.hasAttribute("data-voice-submit"),
+          onDenied: function () { alert("Microphone permission is off for this site."); }
+        });
+      });
+      var host = field.parentNode.querySelector("[data-voice-slot]") || field.parentNode;
+      host.appendChild(button);
+    });
+
+    // Read-aloud buttons on generated documents.
+    document.querySelectorAll("[data-voice-read]").forEach(function (block) {
+      if (!AJ.canSpeak) { return; }
+      var button = document.querySelector(block.getAttribute("data-voice-read"));
+      if (!button) { return; }
+      button.addEventListener("click", function () {
+        if (synth.speaking) { AJ.stop(); button.textContent = "▶ Read it"; return; }
+        button.textContent = "■ Stop";
+        AJ.speak(block.innerText, function () { button.textContent = "▶ Read it"; });
+      });
+    });
+
+    // Hands-free: AJ reads his newest reply, then opens the mic for yours.
+    var toggle = document.getElementById("handsfree");
+    if (toggle) {
+      toggle.checked = AJ.handsFree;
+      toggle.addEventListener("change", function () {
+        AJ.handsFree = toggle.checked;
+        localStorage.setItem(HANDS_FREE_KEY, toggle.checked ? "1" : "0");
+        if (!toggle.checked) { AJ.stop(); AJ.stopListening(); }
+      });
+    }
+
+    var fresh = document.querySelector("[data-voice-auto]");
+    // Reloading the war room must not re-read a reply you already heard, so the
+    // id of the last spoken message is remembered for the tab.
+    var alreadySpoke = fresh && sessionStorage.getItem("aj.spoke") === fresh.getAttribute("data-voice-auto");
+    if (fresh && !alreadySpoke && AJ.handsFree && AJ.canSpeak) {
+      sessionStorage.setItem("aj.spoke", fresh.getAttribute("data-voice-auto"));
+      var input = document.querySelector("[data-voice-input][data-voice-submit]");
+      AJ.speak(fresh.innerText, function () {
+        // Re-open the mic so a conversation stays a conversation. Only when the
+        // toggle is still on — turning it off mid-reply must actually stop it.
+        if (AJ.handsFree && input && AJ.canListen) {
+          AJ.listen(input, { autoSubmit: true, button: document.querySelector(".mic") });
+        }
+      });
+    }
+
+    // Speaking must stop when you leave. A brief that keeps reading after you've
+    // navigated away is the fastest way to get voice switched off for good.
+    window.addEventListener("pagehide", function () { AJ.stop(); });
+  });
+})();
+</script>

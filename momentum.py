@@ -10,15 +10,22 @@ anything. So the arithmetic of your life lives here and is deterministic; the
 model's job is to read these numbers and decide what to say about them. When AJ
 tells you a goal is dead, you can click through to the rows that say so.
 
-Four things this file knows how to do:
+Five things this file knows how to do:
 
     credibility()   what your word has been worth, from the commitment ledger
     goal_health()   pace against the calendar, per goal
+    agenda()        the day as it actually is — her recital included
     signals()       what a good chief of staff would flag this morning
     snapshot()      all of it, assembled once, for the UI and the prompts alike
+
+The agenda is why this file imports `feeds`. A coach that tells you to grind on
+the evening of your daughter's recital is a coach you switch off by Thursday, so
+the schedule is a first-class input to the plan rather than a widget beside it.
 """
 
 from datetime import date, datetime, timedelta
+
+import feeds
 
 # Commitment follow-through has a half-life. A miss three weeks ago should not
 # weigh the same as a miss yesterday, or the score can never recover and stops
@@ -245,6 +252,80 @@ def streak(conn, today=None):
     return {"days": count, "checked_in_today": checked_today}
 
 
+
+# -------------------------------------------------------------------- agenda --
+
+# An event this many days out is close enough to plan around rather than merely
+# know about.
+HORIZON_DAYS = 14
+
+# Events that reshape a day rather than occupy an hour. Matched on the title
+# because feeds don't label importance, and a recital is not a practice.
+_BIG_EVENT_WORDS = ("recital", "performance", "concert", "competition", "conference",
+                    "surgery", "graduation", "ceremony", "wedding", "funeral",
+                    "birthday", "showcase", "playoff", "championship", "final")
+
+
+def is_big(title):
+    text = (title or "").lower()
+    return any(word in text for word in _BIG_EVENT_WORDS)
+
+
+def agenda(conn, today=None, horizon_days=HORIZON_DAYS):
+    """
+    The calendar side of the day: what's on today, tomorrow, and what's coming
+    that deserves planning around.
+
+    Returns empty structures when no feeds are connected, so every caller can
+    render this unconditionally and an unconnected app simply shows nothing.
+    """
+    today = today or _today()
+    end = (today + timedelta(days=horizon_days)).isoformat()
+    rows = [dict(r) for r in conn.execute(
+        """SELECT e.*, s.name AS source_name FROM events e
+           LEFT JOIN sources s ON s.id = e.source_id
+           WHERE e.day >= ? AND e.day <= ? ORDER BY e.day, e.start_time""",
+        (today.isoformat(), end))]
+    for row in rows:
+        row["is_big"] = is_big(row["title"])
+
+    iso = today.isoformat()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    return {
+        "today": [r for r in rows if r["day"] == iso],
+        "tomorrow": [r for r in rows if r["day"] == tomorrow],
+        "upcoming": [r for r in rows if r["day"] > tomorrow],
+        "big": [r for r in rows if r["is_big"]],
+        "all": rows,
+        "connected": conn.execute(
+            "SELECT COUNT(*) AS c FROM sources WHERE enabled = 1").fetchone()["c"],
+    }
+
+
+def busy_hours(events):
+    """
+    Roughly how much of a day the calendar has already spent.
+
+    Used to keep AJ from demanding a six-hour push on a day with three hours of
+    obligations in it. All-day entries count as zero: an early-release day
+    reshapes a schedule but doesn't itself consume the evening.
+    """
+    total = 0.0
+    for event in events:
+        start, end = event.get("start_time"), event.get("end_time")
+        if not start or not end:
+            continue
+        try:
+            sh, sm = (int(x) for x in start.split(":"))
+            eh, em = (int(x) for x in end.split(":"))
+        except ValueError:
+            continue
+        hours = (eh * 60 + em - sh * 60 - sm) / 60
+        if 0 < hours < 14:
+            total += hours
+    return round(total, 1)
+
+
 # ------------------------------------------------------------------- signals --
 
 def signals(state):
@@ -346,6 +427,82 @@ def signals(state):
             "detail": "Nothing on this dashboard moves on that. The calendar is the "
                       "constraint, not the plan.",
         })
+
+    # ---- the rest of the life ----------------------------------------------
+    #
+    # These are deliberately never "critical". A recital is not a problem to
+    # solve, it is a fact to plan around, and ranking your daughter's evening
+    # next to an overdue invoice would be its own kind of wrong.
+    ag = state.get("agenda") or {}
+    for event in ag.get("today", []):
+        if event["is_big"]:
+            out.append({
+                "level": "info",
+                "label": "Today: " + event["title"]
+                         + (" at " + event["start_time"] if event["start_time"] else ""),
+                "detail": ("This is the day, not a day with this in it."
+                           + (" " + event["location"] if event["location"] else "")
+                           + " Everything else moves around it."),
+            })
+    hours = busy_hours(ag.get("today", []))
+    if hours >= 3:
+        out.append({
+            "level": "info",
+            "label": format(hours, ".1f") + "h of the day is already committed",
+            "detail": "Plan for what's left, not for the day you wish you had. "
+                      "One real block beats three you'll cancel.",
+        })
+    for event in ag.get("upcoming", []):
+        if not event["is_big"]:
+            continue
+        days_out = (_parse(event["day"]) - today).days
+        if days_out <= 4:
+            out.append({
+                "level": "medium",
+                "label": event["title"] + " in " + str(days_out) + " days",
+                "detail": "Front-load this week's work. The day itself is spoken for.",
+            })
+
+    # Commitments due on a day the calendar has already claimed. Catching this on
+    # Monday is the difference between moving a promise and breaking one.
+    heavy = {e["day"] for e in ag.get("all", []) if e["is_big"]}
+    for c in state["commitments"]["open"] + state["commitments"]["due_today"]:
+        if c["due_date"] in heavy:
+            out.append({
+                "level": "medium",
+                "label": "\"" + c["text"] + "\" is due on a day that's already spoken for",
+                "detail": "Move it forward now, while moving it is still a choice.",
+            })
+
+    money = state.get("money") or {}
+    if money.get("has_data"):
+        if money["net"] < 0:
+            out.append({
+                "level": "high",
+                "label": "You spent $" + format(-money["net"], ",.0f") + " more than you "
+                         "made in the last " + str(money["window_days"]) + " days",
+                "detail": "$" + format(money["income"], ",.0f") + " in, $"
+                          + format(money["spend"], ",.0f") + " out. Runway is the thing "
+                          "that buys you the right to say no — this is spending it.",
+            })
+        elif money["save_rate"] >= 0.15:
+            out.append({
+                "level": "good",
+                "label": "Saving " + str(round(money["save_rate"] * 100))
+                         + "% of what came in",
+                "detail": "$" + format(money["saved"], ",.0f") + " moved to savings on $"
+                          + format(money["income"], ",.0f") + " of income. That is the "
+                          "habit that makes every other goal survivable.",
+            })
+        for mover in money["movers"]:
+            out.append({
+                "level": "medium",
+                "label": mover["category"].title() + " is up $"
+                         + format(mover["delta"], ",.0f") + " this month",
+                "detail": "$" + format(mover["now"], ",.0f") + " against $"
+                          + format(mover["was"], ",.0f") + " the month before. Not a "
+                          "verdict — just the number, before it becomes the normal.",
+            })
 
     order = {"critical": 0, "high": 1, "medium": 2, "good": 3, "info": 4}
     out.sort(key=lambda s: order.get(s["level"], 5))
@@ -460,6 +617,8 @@ def snapshot(conn, today=None):
     state = {
         "today": today,
         "profile": dict(profile) if profile else None,
+        "agenda": agenda(conn, today),
+        "money": feeds.money_snapshot(conn, today),
         "goals": goals,
         "commitments": commitments,
         "milestones_overdue": milestones_overdue,
