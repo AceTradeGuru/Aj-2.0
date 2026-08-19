@@ -66,7 +66,7 @@ def seed_demo():
     conn = get_connection()
     for table in ("metric_log", "milestones", "commitments", "checkins",
                   "messages", "briefs", "ai_spend", "events", "transactions",
-                  "sources", "goals", "profile"):
+                  "inbox", "sources", "goals", "profile"):
         conn.execute(f"DELETE FROM {table}")
 
     conn.execute("""
@@ -271,6 +271,32 @@ def _seed_demo_feeds(conn):
         conn.execute("""INSERT INTO transactions (source_id, day, description, amount,
                         category) VALUES (?,?,?,?,?)""",
                      (source_ids["bank"], _d(off), description, amount, category))
+
+    # A mailbox mid-week: two real asks, one machine, one blast. Exactly the mix
+    # that makes triage worth having.
+    cur = conn.execute("""INSERT INTO sources (kind, name, last_synced_at)
+                          VALUES ('imap', 'Mail — demo', datetime('now'))""")
+    mail_id = cur.lastrowid
+    mail = [
+        ("Ms. Rivera", "rivera@school.edu", "Can you confirm Wednesday at 4:15?",
+         "Wednesday 4:15 works on our end. Please confirm so I can hold the slot.",
+         -3, "school", 1),
+        ("Marcus Webb", "marcus@bigcarrier.com",
+         "Re: pilot pricing — could you send the agreement?",
+         "Legal wants the terms this week so we can start on the 1st.", -1, "business", 1),
+        ("Dance Studio", "info@studio.com", "Recital call times posted",
+         "Call time is 4:00 for all groups. Costumes must be picked up by Friday.",
+         -2, "kids", 0),
+        ("Chase", "no-reply@chase.com", "Your statement is ready", "", -4, "money", 0),
+        ("LinkedIn", "notifications@linkedin.com", "You appeared in 9 searches",
+         "", -1, "bulk", 0),
+    ]
+    for i, (name, addr, subject, snippet, off, category, needs_reply) in enumerate(mail):
+        conn.execute("""INSERT INTO inbox (source_id, message_id, from_name, from_addr,
+                        subject, snippet, day, received_at, category, needs_reply)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                     (mail_id, "<demo-" + str(i) + "@aj>", name, addr, subject, snippet,
+                      _d(off), _d(off) + "T09:14", category, needs_reply))
 
 
 def main():
