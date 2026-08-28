@@ -148,6 +148,7 @@ what to *say* about the numbers; it never produces them.
 | `schema.sql` | Thirteen tables. The commitment ledger is the important one. |
 | `templates/_voice.html` | Speech in and out, on the browser's own engine. |
 | `config.py` | Environment-driven config; production refuses to boot underspecified. |
+| `smoke_test.py` | Every route, the cold-boot path, and the failures that should fail. `python3 smoke_test.py`. |
 
 ## What it costs
 

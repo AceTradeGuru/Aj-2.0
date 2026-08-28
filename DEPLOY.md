@@ -40,13 +40,9 @@ into it), every restart wipes your goals. That's the whole failure mode of
 deploying a file-backed app, and it's why the blueprint provisions the disk and
 the starter plan that allows one.
 
-Create the schema once, from a Render shell:
-
-```bash
-python3 -c "from aj_db import create_tables; create_tables()"
-```
-
-Then open the app and answer the five onboarding questions.
+There is no schema step. The app builds its tables at import — every statement in
+`schema.sql` is `CREATE ... IF NOT EXISTS` — so a fresh disk comes up working and
+a restart changes nothing. Open the app and answer the five onboarding questions.
 
 ## The production guards
 

@@ -1,0 +1,39 @@
+# Run the smoke test on every push and pull request.
+#
+# One job, because there is one question worth asking automatically: does the app
+# still work end to end. The suite boots the app against a scratch database,
+# walks every route, and asserts the failures fail — see smoke_test.py.
+#
+# No API key is set here on purpose. The coach falls back to its offline engine
+# without credentials, which means CI exercises the path a fresh clone takes and
+# never spends money to tell you a template renders.
+name: smoke
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The full runtime set, not a trimmed one: a deploy that can't install its
+      # own requirements is exactly the failure this is meant to catch.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Byte-compile every module
+        run: python -m compileall -q .
+
+      - name: Smoke test
+        run: python smoke_test.py

@@ -26,6 +26,7 @@ Three rules hold everywhere in this file:
 """
 
 import hmac
+import os
 import re
 import secrets
 import sys
@@ -39,7 +40,7 @@ from markupsafe import Markup, escape
 import coach_engine
 import feeds
 import momentum
-from aj_db import DB_FILE, create_tables, get_connection
+from aj_db import create_tables, get_connection
 from config import Config, validate
 
 app = Flask(__name__)
@@ -53,6 +54,15 @@ if _problems:
 
 app.secret_key = Config.SECRET_KEY
 app.permanent_session_lifetime = timedelta(seconds=Config.PERMANENT_SESSION_LIFETIME)
+
+# Build the schema at import rather than only under __main__.
+#
+# Gunicorn imports this module; it never runs __main__. Without this, a deploy
+# boots against a database with no tables and 500s on every page until someone
+# opens a shell — which is a setup step that should not exist. Every statement in
+# schema.sql is CREATE ... IF NOT EXISTS, so this is idempotent and cheap, and it
+# means a fresh disk on a new Render instance comes up working.
+create_tables()
 
 DOMAINS = {
     "business": "Business",
@@ -1007,7 +1017,5 @@ def inbox_handled(item_id):
 
 
 if __name__ == "__main__":
-    if not DB_FILE.exists():
-        create_tables()
-        print("built " + DB_FILE.name)
-    app.run(debug=Config.DEBUG, port=int(__import__("os").environ.get("PORT", 5004)))
+    # The schema is already built at import. Nothing to do here but serve.
+    app.run(debug=Config.DEBUG, port=int(os.environ.get("PORT", 5004)))
