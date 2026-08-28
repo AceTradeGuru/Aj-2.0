@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Check-in{% endblock %}
+{% block crumb %}Check-in{% endblock %}
+{% block content %}
+<h1>{{ today.strftime('%A') }}&rsquo;s check-in</h1>
+<div class="sub">Two minutes. AJ grades the day against what was on the board — not against
+  how hard it felt.</div>
+
+<div class="grid split">
+  <div>
+    <div class="card">
+      <form method="post">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <label>What did you actually do today?
+          <span class="hint">— outcomes, not activities</span></label>
+        <textarea name="log" placeholder="Shipped the pricing page. Twenty carrier calls, three demos booked."
+                  autofocus data-voice-input>{{ entry.log if entry else '' }}</textarea>
+        <div class="voicebar" style="margin-top:.4rem" data-voice-slot>
+          Talk it through instead of typing — the mic fills this box.
+        </div>
+
+        <div class="fieldrow">
+          <div>
+            <label>Hours of deep work <span class="hint">— on the goals, not the inbox</span></label>
+            <input name="deep_hours" value="{{ entry.deep_hours if entry else '' }}" placeholder="4.5">
+          </div>
+          <div>
+            <label>Energy (1&ndash;5)</label>
+            <select name="energy">
+              {% for n in [1,2,3,4,5] %}
+                <option value="{{ n }}" {{ 'selected' if entry and entry.energy == n or (not entry and n == 3) }}>
+                  {{ n }} — {{ {1:'empty',2:'low',3:'fine',4:'good',5:'sharp'}[n] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <label>What blocked you? <span class="hint">— AJ watches for repeats</span></label>
+        <input name="blockers" value="{{ entry.blockers if entry else '' }}"
+               placeholder="Support queue ate the morning">
+
+        <button class="btn btn-primary" style="margin-top:1rem">
+          {{ 'Update and re-grade' if entry else 'Log the day and get graded' }}</button>
+      </form>
+    </div>
+
+    {% if entry and entry.debrief %}
+      <div class="brief">
+        <div class="briefhead">
+          <span class="who">AJ&rsquo;s debrief</span>
+          <span class="badge {{ 'brand' if entry.engine == 'claude' else 'neutral' }}">{{ entry.engine }}</span>
+          <button class="btn btn-ghost btn-sm" id="readdebrief" type="button">▶ Read it</button>
+          <span class="spacer"></span>
+          <span style="font-size:1.6rem;font-weight:800;letter-spacing:-1px;
+            color:{{ 'var(--brand)' if entry.grade >= 70 else '#f87171' }}">{{ entry.grade }}<span
+            style="font-size:.8rem;font-weight:600;color:#8b95ab">/100</span></span>
+        </div>
+        <div data-voice-read="#readdebrief">{{ entry.debrief|markdown }}</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="eyebrow">Streak</div>
+      <div style="font-size:2rem;font-weight:800;letter-spacing:-1px">{{ s.streak.days }}</div>
+      <div class="tiny muted">consecutive days logged.
+        {{ 'Today is in.' if s.streak.checked_in_today else 'Today is not.' }}</div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Due today</div>
+      {% for x in s.commitments.due_today + s.commitments.overdue %}
+        <div class="rowitem"><div class="main">
+          <div class="t">{{ x.text }}</div>
+          <div class="m"><span class="badge {{ 'at_risk' if x.due_date < today.isoformat() else 'watch' }}">{{ x.due_date|when }}</span></div>
+        </div></div>
+      {% else %}
+        <div class="tiny muted" style="margin-top:.4rem">Nothing due today.</div>
+      {% endfor %}
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>Recent days</h3></div>
+      <div class="cardbody">
+        {% for c in history %}
+          <div class="rowitem">
+            <div class="main">
+              <div class="t">{{ c.day|nicedate }}
+                <span class="muted tiny">· {{ '%.1f'|format(c.deep_hours) }}h · energy {{ c.energy }}/5</span></div>
+              <div class="m">{{ c.log[:110] }}{{ '…' if c.log|length > 110 }}</div>
+            </div>
+            {% if c.grade is not none %}
+              <div style="font-weight:800;font-variant-numeric:tabular-nums"
+                   class="{{ 'num strong' if c.grade >= 85 else 'num on_track' if c.grade >= 70 else 'num watch' if c.grade >= 50 else 'num at_risk' }}">{{ c.grade }}</div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="empty">No history yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

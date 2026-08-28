@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Brief your CEO{% endblock %}
+{% block crumb %}Setup{% endblock %}
+{% block content %}
+<h1>Brief your CEO</h1>
+<div class="sub">Five questions. AJ reads these before every word he says to you — the
+  difference between a coach and a chatbot is whether it knows what you&rsquo;re chasing.</div>
+
+<form method="post">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <div class="card" style="max-width:760px">
+    <label>Your name</label>
+    <input name="name" value="{{ p.name if p else form.get('name','') }}" required autofocus>
+
+    <label>The north star <span class="hint">— the dream, in your words. No metrics needed here.</span></label>
+    <textarea name="north_star" required
+      placeholder="Run a freight-tech company doing $1M a year that I own outright, and be in the best shape of my life while I do it.">{{ p.north_star if p else form.get('north_star','') }}</textarea>
+
+    <label>Who you&rsquo;re becoming <span class="hint">— AJ quotes this back when your calendar disagrees</span></label>
+    <textarea name="identity" style="min-height:70px"
+      placeholder="The operator who ships.">{{ p.identity if p else form.get('identity','') }}</textarea>
+
+    <label>Non-negotiables <span class="hint">— one per line. No plan AJ writes will violate these.</span></label>
+    <textarea name="values_text" style="min-height:80px"
+      placeholder="I don't trade my health for a quarter.&#10;I tell the truth about the number, especially when it's bad.">{{ p.values_text if p else form.get('values_text','') }}</textarea>
+
+    <label>What you&rsquo;re running from <span class="hint">— the honest half of motivation</span></label>
+    <textarea name="stakes" style="min-height:70px"
+      placeholder="Another three years of being the smartest person in a room I don't own.">{{ p.stakes if p else form.get('stakes','') }}</textarea>
+
+    <div class="fieldrow">
+      <div>
+        <label>Horizon <span class="hint">— years to the north star</span></label>
+        <input name="horizon_years" value="{{ p.horizon_years if p else 3 }}">
+      </div>
+      <div>
+        <label>How hard should AJ push? <span class="hint">— 0 steady hand, 100 shark tank</span></label>
+        <input type="range" name="intensity" min="0" max="100" step="5"
+               value="{{ p.intensity if p else 90 }}"
+               oninput="document.getElementById('iv').textContent = this.value">
+        <div class="tiny muted">Intensity: <b id="iv">{{ p.intensity if p else 90 }}</b></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:1.2rem">
+      {{ 'Update the mandate' if p else 'Hire him' }}</button>
+  </div>
+</form>
+{% endblock %}

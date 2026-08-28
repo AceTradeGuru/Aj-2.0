@@ -1,0 +1,109 @@
+# Running AJ 2.0 somewhere you can reach it
+
+Local is the default and it's fine — the app runs on your laptop with no key, no
+account, and no network. Deploy only when you want it on your phone at 6am.
+
+## Locally
+
+```bash
+pip install -r requirements.txt
+python3 aj_db.py          # add --demo for a life to click through first
+python3 app.py            # http://localhost:5004
+```
+
+Turn on the real coach:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...    # or: ant auth login
+python3 app.py
+```
+
+The sidebar tells you which engine you're on. No key means the offline coach —
+the app never silently pretends otherwise.
+
+## Deployed
+
+`render.yaml` is a Render blueprint: **New → Blueprint**, point it at this repo.
+
+Three things you must set by hand in the dashboard (none are read from the repo):
+
+| Variable | Why |
+|---|---|
+| `SECRET_KEY` | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `AJ_PASSCODE` | The gate on the whole app. Production refuses to boot without it. |
+| `ANTHROPIC_API_KEY` | Optional. Without it the offline coach runs. |
+| `AJ_TZ` | The zone you live in, e.g. `America/New_York`. **Set this.** Calendar feeds carry UTC timestamps, and a server in UTC turns a 5:30pm class into 9:30pm. |
+
+**The disk is not optional.** Everything lives in one SQLite file. Without the
+persistent disk in `render.yaml` (mounted at `/var/data`, with `AJ_DB` pointing
+into it), every restart wipes your goals. That's the whole failure mode of
+deploying a file-backed app, and it's why the blueprint provisions the disk and
+the starter plan that allows one.
+
+There is no schema step. The app builds its tables at import — every statement in
+`schema.sql` is `CREATE ... IF NOT EXISTS` — so a fresh disk comes up working and
+a restart changes nothing. Open the app and answer the five onboarding questions.
+
+## The production guards
+
+`config.validate()` refuses to start and prints every problem at once if, with
+`AJ_ENV=production`:
+
+- `SECRET_KEY` is missing
+- `AJ_PASSCODE` is missing — this database holds your goals, your misses, and
+  your excuses
+- debug is on (the Werkzeug debugger is remote code execution)
+- secure cookies are off
+
+A misconfigured deploy fails loudly instead of quietly serving an open app.
+
+## Mail (optional)
+
+Three more variables, and a restart:
+
+```bash
+AJ_IMAP_HOST=imap.gmail.com
+AJ_IMAP_USER=you@gmail.com
+AJ_IMAP_PASSWORD=<app password>     # NOT your account password
+AJ_IMAP_FOLDER=INBOX                # optional
+```
+
+Gmail: Account → Security → 2-Step Verification → App passwords. iCloud and
+Outlook have the same feature under different names.
+
+Two things worth knowing before you turn this on. An app password is a real
+credential with full mailbox access, so use it on a mailbox you'd be willing to
+lose rather than your primary identity account, and revoke it from the same page
+the moment you stop using it. And the connection is opened read-only and fetched
+with `BODY.PEEK`, so AJ can never mark your mail read — but it is still your
+mail, and the subjects of what's waiting end up in the model prompt when the
+Claude engine is on.
+
+## Voice
+
+Nothing to configure. It uses the browser's speech engine, so it works the moment
+you open the app in Chrome, Edge, or Safari — over HTTPS, which the deploy above
+already gives you. Microphone access requires a secure origin, so voice input
+works on `localhost` and on your deployed domain, but not over plain http on a
+LAN address.
+
+## Backups
+
+One file. Copy it:
+
+```bash
+scp you@host:/var/data/aj.db ./aj-backup-$(date +%F).db
+```
+
+Do this before you rely on it, not after.
+
+## Cost
+
+| | |
+|---|---|
+| Render starter + 1GB disk | ~$7/mo |
+| Claude | usage, capped by `AI_MONTHLY_CAP_USD` (default $25) |
+| Running it locally | $0 |
+
+Past the cap, AJ answers from the offline coach instead of erroring. Check
+**Mandate & spend** for the running total by feature.

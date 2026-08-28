@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}War table{% endblock %}
+{% block crumb %}War table{% endblock %}
+{% block content %}
+
+{% set c = s.credibility %}
+<div class="grid g4" style="margin-bottom:1rem">
+  <div class="kpi">
+    <div class="lbl">Credibility</div>
+    <div class="num {{ c.tone }}">{{ c.score if c.score is not none else '—' }}</div>
+    <div class="note">{{ c.label }} — {{ c.kept }} kept, {{ c.missed }} missed</div>
+  </div>
+  <div class="kpi">
+    <div class="lbl">Check-in streak</div>
+    <div class="num">{{ s.streak.days }}<span style="font-size:.9rem;font-weight:600"> days</span></div>
+    <div class="note">{{ 'Logged today.' if s.streak.checked_in_today else 'Not logged today.' }}</div>
+  </div>
+  {% set active = s.goals|selectattr('status','equalto','active')|list %}
+  {% set behind = active|rejectattr('health.status','in',['strong','on_track'])|list %}
+  <div class="kpi">
+    <div class="lbl">Goals behind pace</div>
+    <div class="num {{ 'at_risk' if behind else 'strong' }}">{{ behind|length }}<span
+      style="font-size:.9rem;font-weight:600;color:var(--faint)"> / {{ active|length }}</span></div>
+    <div class="note">{{ s.milestones_overdue|length }} milestone{{ '' if s.milestones_overdue|length == 1 else 's' }} past due</div>
+  </div>
+  <div class="kpi">
+    <div class="lbl">Deep work / day</div>
+    <div class="num {{ 'at_risk' if s.recent_deep_hours.avg < 1.5 else 'strong' if s.recent_deep_hours.avg >= 3 else 'watch' }}">{{ '%.1f'|format(s.recent_deep_hours.avg) }}<span style="font-size:.9rem;font-weight:600">h</span></div>
+    <div class="note">{{ '%.0f'|format(s.recent_deep_hours.total) }}h over {{ s.recent_deep_hours.days }} logged days</div>
+  </div>
+</div>
+
+<div class="brief">
+  <div class="briefhead">
+    <span class="who">AJ&rsquo;s brief</span>
+    <span class="badge {{ 'brand' if brief_engine == 'claude' else 'neutral' }}">{{ brief_engine }}</span>
+    <span class="spacer"></span>
+    <button class="btn btn-ghost btn-sm" id="readbrief" type="button">▶ Read it</button>
+    <form method="post" action="{{ url_for('brief_refresh') }}" class="inline">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="btn btn-ghost btn-sm">Re-brief</button>
+    </form>
+  </div>
+  <div data-voice-read="#readbrief">{{ brief|markdown }}</div>
+</div>
+
+<div class="grid split">
+  <div>
+    <div class="card pad0">
+      <div class="cardhead">
+        <h3>The board</h3>
+        <span class="spacer"></span>
+        <span class="tiny muted">{{ s.commitments.overdue|length }} overdue ·
+          {{ s.commitments.due_today|length }} due today ·
+          {{ s.commitments.open|length }} ahead</span>
+      </div>
+      <div class="cardbody">
+        {% macro commitment_row(x, tone) %}
+          <div class="rowitem">
+            <div class="main">
+              <div class="t">{{ x.text }}</div>
+              <div class="m">
+                <span class="badge {{ tone }}">{{ x.due_date|when }}</span>
+                {% if x.goal_title %}<span class="muted"> · {{ x.goal_title }}</span>{% endif %}
+                <span class="muted"> · set by {{ 'AJ' if x.source == 'aj' else 'you' }}</span>
+              </div>
+            </div>
+            <div class="acts">
+              <form method="post" action="{{ url_for('commitment_resolve', cid=x.id) }}" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="kept">
+                <button class="btn btn-green btn-sm">Kept</button>
+              </form>
+              <form method="post" action="{{ url_for('commitment_resolve', cid=x.id) }}" class="row tight">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="missed">
+                <input name="excuse" placeholder="What happened?" style="width:150px" class="tiny">
+                <button class="btn btn-red btn-sm">Missed</button>
+              </form>
+            </div>
+          </div>
+        {% endmacro %}
+
+        {% for x in s.commitments.overdue %}{{ commitment_row(x, 'at_risk') }}{% endfor %}
+        {% for x in s.commitments.due_today %}{{ commitment_row(x, 'watch') }}{% endfor %}
+        {% for x in s.commitments.open %}{{ commitment_row(x, 'neutral') }}{% endfor %}
+        {% if not (s.commitments.overdue or s.commitments.due_today or s.commitments.open) %}
+          <div class="empty">Nothing on the board with a date on it. That&rsquo;s the problem to fix.</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('commitment_add') }}"
+              style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line2)">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="{{ url_for('dashboard') }}">
+          <div class="row" style="gap:.5rem;flex-wrap:nowrap;align-items:stretch">
+            <input name="text" placeholder="What are you committing to?" required style="flex:1"
+                   data-voice-input>
+            <input type="date" name="due_date" required style="width:150px"
+                   value="{{ today.isoformat() }}">
+            <select name="goal_id" style="width:170px">
+              <option value="">No goal</option>
+              {% for g in s.goals if g.status == 'active' %}
+                <option value="{{ g.id }}">{{ g.title[:40] }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-dark">Commit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>What AJ sees</h3>
+        <span class="spacer"></span>
+        <span class="tiny muted">computed, not generated</span></div>
+      <div class="cardbody">
+        {% for sig in s.signals %}
+          <div class="sig {{ sig.level }}">
+            <div class="lbl">{{ sig.label }}</div>
+            <div class="det">{{ sig.detail }}</div>
+          </div>
+        {% else %}
+          <div class="empty">Clean board. Nothing overdue, nothing stale.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="border-color:#e6d3ae;background:#fffdf8">
+      <div class="eyebrow" style="color:var(--brand-dk)">The one thing</div>
+      <div style="font-size:1.05rem;font-weight:750;margin:.35rem 0 .45rem;letter-spacing:-.2px">
+        {{ s.one_thing.text }}</div>
+      <div class="tiny muted">{{ s.one_thing.why }}</div>
+      {% if s.one_thing.goal_id %}
+        <a class="btn btn-ghost btn-sm" style="margin-top:.75rem"
+           href="{{ url_for('goal_detail', goal_id=s.one_thing.goal_id) }}">Open the goal</a>
+      {% endif %}
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>Goals</h3><span class="spacer"></span>
+        <a class="tiny" href="{{ url_for('goals') }}">All</a></div>
+      <div class="cardbody">
+        {% for g in s.goals if g.status == 'active' %}
+          {% set h = g.health %}
+          <div style="margin-bottom:1.1rem">
+            <div class="row" style="justify-content:space-between;gap:.4rem">
+              <a href="{{ url_for('goal_detail', goal_id=g.id) }}"
+                 style="font-weight:700;color:var(--text)">{{ g.title }}</a>
+              <span class="badge {{ h.status }}">{{ h.label }}</span>
+            </div>
+            <div class="tiny muted" style="margin-top:.15rem">
+              {{ (g, g.current_value)|value }} of {{ (g, g.target_value)|value }} ·
+              {{ h.days_left }}d left
+              {% if h.per_week is not none %} · needs {{ (g, h.per_week)|delta }}/wk{% endif %}
+            </div>
+            <div class="track paced">
+              <i class="{{ h.status }}" style="width:{{ [[h.progress_pct, 0]|max, 100]|min }}%"></i>
+              <span class="pin" style="left:{{ [h.expected_pct, 100]|min }}%"></span>
+            </div>
+            {% if h.is_stale %}
+              <div class="pinnote" style="color:var(--at_risk)">
+                Not measured in {{ h.stale_days }} days.</div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="empty">No active goals.<br>
+            <a class="btn btn-primary btn-sm" style="margin-top:.6rem"
+               href="{{ url_for('goal_new') }}">Put one on the board</a></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Model spend, this month</div>
+      <div style="font-weight:700;margin-top:.2rem">
+        ${{ '%.2f'|format(spent / 100) }} <span class="muted tiny">of ${{ '%.2f'|format(cap / 100) }} cap</span>
+      </div>
+      <div class="track"><i style="width:{{ [(spent / cap * 100)|round|int, 100]|min }}%"></i></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

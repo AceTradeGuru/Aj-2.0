@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block crumb %}{{ code }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px">
+  <div class="eyebrow">{{ code }}</div>
+  <h1>{{ title }}</h1>
+  <p class="muted" style="margin-top:.4rem">{{ message }}</p>
+  <a class="btn btn-dark" style="margin-top:1rem" href="{{ url_for('dashboard') }}">Back to the war table</a>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Mandate &amp; spend{% endblock %}
+{% block crumb %}Mandate &amp; spend{% endblock %}
+{% block content %}
+<h1>The mandate</h1>
+<div class="sub">What AJ knows about you, and what he costs to run.</div>
+
+<div class="grid split">
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="card">
+      <label>North star</label>
+      <textarea name="north_star">{{ profile.north_star }}</textarea>
+      <label>Who you&rsquo;re becoming</label>
+      <textarea name="identity" style="min-height:70px">{{ profile.identity }}</textarea>
+      <label>Non-negotiables</label>
+      <textarea name="values_text" style="min-height:80px">{{ profile.values_text }}</textarea>
+      <label>What you&rsquo;re running from</label>
+      <textarea name="stakes" style="min-height:70px">{{ profile.stakes }}</textarea>
+      <div class="fieldrow">
+        <div><label>Horizon (years)</label>
+          <input name="horizon_years" value="{{ profile.horizon_years }}"></div>
+        <div><label>Intensity <span class="hint">— 0 steady, 100 shark tank</span></label>
+          <input type="range" name="intensity" min="0" max="100" step="5" value="{{ profile.intensity }}"
+                 oninput="document.getElementById('iv').textContent = this.value">
+          <div class="tiny muted">Now: <b id="iv">{{ profile.intensity }}</b></div></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:1rem">Save</button>
+    </div>
+  </form>
+
+  <div>
+    <div class="card">
+      <div class="eyebrow">This month</div>
+      <div style="font-size:1.8rem;font-weight:800;letter-spacing:-.8px">${{ '%.2f'|format(spent / 100) }}</div>
+      <div class="tiny muted">of a ${{ '%.2f'|format(cap / 100) }} cap. Past the cap, AJ keeps
+        answering from the offline coach instead of failing.</div>
+      <div class="track"><i style="width:{{ [(spent / cap * 100)|round|int, 100]|min }}%"></i></div>
+    </div>
+
+    {% if features %}
+      <div class="card pad0">
+        <div class="cardhead"><h3>By feature, this month</h3></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Feature</th><th class="num">Calls</th><th class="num">Cost</th></tr></thead>
+          <tbody>
+            {% for f in features %}
+              <tr><td>{{ f.feature }}</td><td class="num">{{ f.calls }}</td>
+                  <td class="num">${{ '%.2f'|format(f.cents / 100) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+    {% endif %}
+
+    {% if months %}
+      <div class="card pad0">
+        <div class="cardhead"><h3>History</h3></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Month</th><th class="num">Calls</th><th class="num">Cost</th></tr></thead>
+          <tbody>
+            {% for m in months %}
+              <tr><td>{{ m.month }}</td><td class="num">{{ m.calls }}</td>
+                  <td class="num">${{ '%.2f'|format(m.cents / 100) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

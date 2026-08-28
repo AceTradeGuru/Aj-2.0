@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Life{% endblock %}
+{% block crumb %}Life{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:1rem">
+  <div>
+    <h1>The rest of the life</h1>
+    <div class="sub" style="margin-bottom:0">Her schedule, school, and the money.
+      AJ plans around this — never through it.</div>
+  </div>
+  <form method="post" action="{{ url_for('sync_all') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button class="btn btn-dark">Sync all calendars</button>
+  </form>
+</div>
+
+<div class="grid split">
+  <div>
+    <div class="card pad0">
+      <div class="cardhead"><h3>Next two weeks</h3>
+        <span class="spacer"></span>
+        <span class="tiny muted">{{ s.agenda.all|length }} events</span></div>
+      <div class="cardbody">
+        {% set ns = namespace(day='') %}
+        {% for e in s.agenda.all %}
+          {% if e.day != ns.day %}
+            {% set ns.day = e.day %}
+            <div class="eyebrow" style="margin-top:{{ '0' if loop.first else '1rem' }}">
+              {{ e.day|nicedate }}
+              {% if e.day == today.isoformat() %}<span class="badge brand">today</span>{% endif %}
+            </div>
+          {% endif %}
+          <div class="rowitem">
+            <div style="width:62px;flex:0 0 62px;font-weight:700;font-variant-numeric:tabular-nums"
+                 class="{{ 'muted' if not e.start_time }}">{{ e.start_time or 'all day' }}</div>
+            <div class="main">
+              <div class="t">{{ e.title }}
+                {% if e.is_big %}<span class="badge watch">major</span>{% endif %}
+                {% if e.protected %}<span class="badge strong">protected</span>{% endif %}
+              </div>
+              <div class="m">
+                {% if e.location %}{{ e.location }} · {% endif %}
+                {% if e.person %}{{ e.person }} · {% endif %}{{ e.source_name or 'manual' }}
+              </div>
+            </div>
+            <form method="post" action="{{ url_for('event_protect', event_id=e.id) }}" class="inline">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button class="btn btn-sm {{ 'btn-green' if e.protected else 'btn-ghost' }}"
+                      title="Immovable — AJ will never plan work over it">
+                {{ '🔒' if e.protected else 'Protect' }}</button>
+            </form>
+          </div>
+        {% else %}
+          <div class="empty">
+            {% if s.agenda.connected %}Nothing on the calendar for two weeks.
+            {% else %}No calendars connected yet — add one on the right.{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% set m = s.money %}
+    <div class="card pad0">
+      <div class="cardhead"><h3>Money</h3><span class="spacer"></span>
+        <span class="tiny muted">{{ 'last ' ~ m.window_days ~ ' days' if m.has_data }}</span></div>
+      <div class="cardbody">
+        {% if m.has_data %}
+          <div class="grid g4" style="gap:.75rem;margin-bottom:1rem">
+            <div><div class="eyebrow">In</div>
+              <div style="font-weight:800;font-size:1.15rem;color:var(--strong)">${{ '{:,.0f}'.format(m.income) }}</div></div>
+            <div><div class="eyebrow">Out</div>
+              <div style="font-weight:800;font-size:1.15rem">${{ '{:,.0f}'.format(m.spend) }}</div></div>
+            <div><div class="eyebrow">Net</div>
+              <div style="font-weight:800;font-size:1.15rem"
+                   class="{{ 'num strong' if m.net >= 0 else 'num at_risk' }}">${{ '{:,.0f}'.format(m.net) }}</div></div>
+            <div><div class="eyebrow">Saved</div>
+              <div style="font-weight:800;font-size:1.15rem">${{ '{:,.0f}'.format(m.saved) }}
+                <span class="tiny muted">{{ (m.save_rate * 100)|round|int }}%</span></div></div>
+          </div>
+          {% for cat, amount in m.top_categories %}
+            <div class="funnelrow" style="display:flex;align-items:center;gap:.7rem;margin-bottom:.4rem">
+              <div style="width:110px;font-size:.82rem;font-weight:700">{{ cat|title }}</div>
+              <div style="flex:1;background:var(--line2);border-radius:6px;height:16px;overflow:hidden">
+                <i style="display:block;height:100%;background:var(--brand);
+                          width:{{ (amount / m.top_categories[0][1] * 100)|round|int }}%"></i>
+              </div>
+              <div style="width:88px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">
+                ${{ '{:,.0f}'.format(amount) }}</div>
+            </div>
+          {% endfor %}
+          <div class="tiny muted" style="margin-top:.8rem">
+            Burn is about <b>${{ '{:,.0f}'.format(m.monthly_burn) }}/month</b>.
+            Every $1,000 you keep is another week you get to choose your customers.
+          </div>
+        {% else %}
+          <div class="empty">No transactions yet. Import a bank export on the right.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% set mail = s.mail %}
+    {% if mail.has_data %}
+      <div class="card pad0">
+        <div class="cardhead"><h3>Waiting on a reply</h3><span class="spacer"></span>
+          <span class="tiny muted">{{ mail.waiting_count }} of {{ mail.total }} unhandled</span></div>
+        <div class="cardbody">
+          {% for item in mail.waiting %}
+            <div class="rowitem">
+              <div class="main">
+                <div class="t">{{ item.subject or '(no subject)' }}</div>
+                <div class="m">
+                  <span class="badge {{ 'at_risk' if item.category in ('school','money') else 'neutral' }}">{{ item.category }}</span>
+                  {{ item.from_name }} · {{ item.day|when }}
+                  {% if item.snippet %}<div class="tiny muted">{{ item.snippet[:120] }}…</div>{% endif %}
+                </div>
+              </div>
+              <form method="post" action="{{ url_for('inbox_handled', item_id=item.id) }}" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm">Handled</button>
+              </form>
+            </div>
+          {% else %}
+            <div class="empty">Nothing waiting on you. Rare and worth noticing.</div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if recent_tx %}
+      <div class="card pad0">
+        <div class="cardhead"><h3>Recent transactions</h3></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+            {% for t in recent_tx %}
+              <tr>
+                <td class="tiny muted">{{ t.day|nicedate }}</td>
+                <td>{{ t.description }}</td>
+                <td><span class="badge neutral">{{ t.category }}</span></td>
+                <td class="num" style="font-weight:700;color:{{ 'var(--strong)' if t.amount > 0 else 'inherit' }}">
+                  {{ '{:+,.2f}'.format(t.amount) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Connect a calendar</h3>
+      <p class="tiny muted">Any app that publishes an <span class="mono">.ics</span>
+        subscription works — dance, school, sports, your own calendar.</p>
+      <form method="post" action="{{ url_for('source_add') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="kind" value="ics">
+        <label>Name it</label>
+        <input name="name" placeholder="Dance — BAND calendar" required>
+        <label>Whose is it? <span class="hint">— optional</span></label>
+        <input name="person" placeholder="Daughter">
+        <label>Subscription URL</label>
+        <input name="url" placeholder="https://…/calendar.ics" required>
+        <button class="btn btn-primary" style="margin-top:.9rem">Add and sync</button>
+      </form>
+      <details style="margin-top:1rem">
+        <summary class="tiny" style="cursor:pointer;font-weight:700">Where to find the URL</summary>
+        <div class="tiny muted" style="margin-top:.5rem;line-height:1.6">
+          <b>BAND</b> — Calendar tab → Manage Events → Export Band Calendars → copy the address.<br>
+          <b>Google Calendar</b> — Settings → the calendar → Secret address in iCal format.<br>
+          <b>Canvas</b> — Calendar → Calendar Feed (bottom right).<br>
+          <b>Apple / iCloud</b> — share the calendar publicly, then copy the link.<br>
+          A <span class="mono">webcal://</span> link is fine — it gets rewritten.
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>Import money</h3>
+      <p class="tiny muted">Download the CSV your bank already offers, then drop it here.
+        Re-importing an overlapping month is safe — nothing double-counts.</p>
+      <form method="post" action="{{ url_for('bank_import') }}" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <label>CSV file</label>
+        <input type="file" name="file" accept=".csv,.txt,text/csv">
+        <label>…or paste the rows</label>
+        <textarea name="pasted" style="min-height:70px"
+                  placeholder="Date,Description,Amount&#10;08/15/2026,PAYROLL,6400.00"></textarea>
+        <button class="btn btn-primary" style="margin-top:.9rem">Import</button>
+      </form>
+      <p class="tiny muted" style="margin-top:.8rem">{{ bank_note }}</p>
+    </div>
+
+    <div class="card">
+      <h3>Mail</h3>
+      {% if mail_ready %}
+        <p class="tiny muted">Reading <b>{{ mail_user }}</b> — headers only, mailbox
+          opened read-only. AJ never marks anything read and never sees the bodies.</p>
+        <form method="post" action="{{ url_for('mail_sync') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-primary" style="margin-top:.5rem">Read the inbox</button>
+        </form>
+      {% else %}
+        <p class="tiny muted">Not connected. Set three environment variables and restart:</p>
+        <div class="mono tiny" style="background:var(--line2);padding:.6rem .7rem;
+             border-radius:8px;margin-top:.5rem;line-height:1.7">
+          AJ_IMAP_HOST=imap.gmail.com<br>
+          AJ_IMAP_USER=you@gmail.com<br>
+          AJ_IMAP_PASSWORD=&lt;app password&gt;
+        </div>
+        <p class="tiny muted" style="margin-top:.6rem">
+          Gmail: Account → Security → 2-Step Verification → App passwords. Use a
+          mailbox you'd be willing to lose, and revoke it from that same page.
+          Credentials live in the environment, never in this database.</p>
+      {% endif %}
+    </div>
+
+    <div class="card pad0">
+      <div class="cardhead"><h3>Connected</h3></div>
+      <div class="cardbody">
+        {% for src in sources %}
+          <div class="rowitem">
+            <div class="main">
+              <div class="t">{{ src.name }}
+                {% if not src.enabled %}<span class="badge neutral">off</span>{% endif %}</div>
+              <div class="m">
+                <span class="badge {{ 'brand' if src.kind == 'ics' else 'neutral' }}">{{ src.kind }}</span>
+                {% if src.kind == 'ics' %}{{ src.event_count }} upcoming
+                {% else %}{{ src.tx_count }} transactions{% endif %}
+                {% if src.last_synced_at %}· synced {{ src.last_synced_at|nicedate }}{% endif %}
+              </div>
+              {% if src.last_error %}
+                <div class="tiny" style="color:var(--at_risk);margin-top:.2rem">
+                  Last sync failed: {{ src.last_error }}</div>
+              {% endif %}
+            </div>
+            <div class="acts">
+              {% if src.kind == 'ics' %}
+                <form method="post" action="{{ url_for('source_sync', source_id=src.id) }}" class="inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                  <button class="btn btn-ghost btn-sm">Sync</button>
+                </form>
+              {% endif %}
+              <form method="post" action="{{ url_for('source_toggle', source_id=src.id) }}" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm">{{ 'Pause' if src.enabled else 'Resume' }}</button>
+              </form>
+              <form method="post" action="{{ url_for('source_delete', source_id=src.id) }}" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-red btn-sm">Remove</button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty">Nothing connected yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
